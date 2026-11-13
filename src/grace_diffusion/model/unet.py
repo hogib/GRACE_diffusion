@@ -17,11 +17,18 @@ import torch.nn.functional as F
 
 
 def sphere_pad(x: torch.Tensor, p: int) -> torch.Tensor:
-    """Pad (B, C, H, W) by p pixels on every side, consistently with the sphere."""
+    """Pad (B, C, H, W) by p pixels on every side, consistently with the sphere.
+
+    The grid is Driscoll–Healy: row 0 is the north pole, the last row is one step short
+    of the south pole. Above the north pole, latitude 90 + kΔ is latitude 90 − kΔ on the
+    far side, i.e. rows 1..p shifted by 180° (exact). Below the last row the next point
+    is the south pole itself, which the grid lacks; the last p rows shifted by 180° are
+    used instead (off by one row, at the pole only).
+    """
     if p == 0:
         return x
     W = x.shape[-1]
-    top = torch.roll(x[..., :p, :].flip(-2), W // 2, dims=-1)
+    top = torch.roll(x[..., 1: p + 1, :].flip(-2), W // 2, dims=-1)
     bottom = torch.roll(x[..., -p:, :].flip(-2), W // 2, dims=-1)
     x = torch.cat([top, x, bottom], dim=-2)
     return torch.cat([x[..., -p:], x, x[..., :p]], dim=-1)
