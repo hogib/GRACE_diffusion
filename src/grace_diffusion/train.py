@@ -151,7 +151,7 @@ def main(argv=None):
         opt.step()
         sched.step()
         ema.update(model)
-        run_loss.append(float(loss))
+        run_loss.append(float(loss.detach()))
         if step % a.val_every == 0 or step == a.steps:
             ema_model.load_state_dict(ema.shadow)
             vl = val_loss(ema_model, val_batches, dev)
