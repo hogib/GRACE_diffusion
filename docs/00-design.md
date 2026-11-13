@@ -146,6 +146,17 @@ signal, so on the twin:
 
 The twin is a closed-loop check. It is not training data for the GRACE model.
 
+*Twin as built (2026-11-13, `prep.build_twin`):* WaterGAP v2.2e,
+gswp3-w5e5, histsoc, monthly TWS 1901–2019 (1,428 months, 0.5°, land only;
+ocean set to zero anomaly), regridded to a Driscoll–Healy grid and expanded to
+degree 128. About 2,600 cells (4% of land) whose storage drifts by more than
+1 m between 1901–1910 and 2010–2019 are excluded (set to zero anomaly). These
+are glacier cells where snow accumulates without bound (mostly high latitude,
+Greenland included) and city cells with point-like groundwater abstraction
+(New York −100 m, Los Angeles −30 m, Tokyo −22 m). Left in, they dominated
+the fine scales. At R5 a few isolated sharp features (lakes) still ring
+slightly. Twin splits: train 1901–1989, validation 1990–2001, test 2002–2019.
+
 **Splits.** Months are correlated, so splits are blocks, never random months.
 - Train: Apr 2002 – Dec 2019.
 - Validation: Jan 2020 – Dec 2022 (all model selection and tuning).
