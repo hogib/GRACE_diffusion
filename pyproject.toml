@@ -7,7 +7,15 @@ authors = [
     { name = "Oguzb", email = "hoguzbolat@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "gravity-toolkit>=1.2.8",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pyshtools>=4.14.1",
+    "requests>=2.34.2",
+    "scipy>=1.18.1",
+    "shxarray>=1.4.0",
+]
 
 [project.scripts]
 grace-diffusion = "grace_diffusion:main"
@@ -15,3 +23,8 @@ grace-diffusion = "grace_diffusion:main"
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
