@@ -104,13 +104,72 @@ def baseline_methods(coeffs: np.ndarray, train_idx: np.ndarray, max_L: int) -> d
     }
 
 
-if __name__ == "__main__":
-    import sys
+def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
+                 project: bool = True, chunk: int = 32) -> Method:
+    """A trained checkpoint as a Method: diffusion samples M members, regress returns 1.
 
-    # usage: python -m grace_diffusion.evaluate <dataset> <kind> <split> <rungs comma> <members> <out.csv>
-    ds, kind, split, rungs, members, out = sys.argv[1:7]
-    rungs = tuple(int(x) for x in rungs.split(","))
-    months, coeffs = prep.load(Path("data/proc"), ds)
-    methods = baseline_methods(coeffs, data.split_months(months, kind, "train"), max(rungs))
-    rows = run(methods, ds, kind, split, rungs, int(members), "val_land", Path(out))
+    Members are generated in the normalised units of training (input / area RMS of input),
+    rescaled to mm, and projected onto exact consistency with the input.
+    """
+    import torch
+
+    from .model.edm import seeded_generator
+    from .train import load_checkpoint
+
+    dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    model, cfg = load_checkpoint(ckpt, dev)
+
+    def method(c, L, M, rng):
+        inp = sh.synth(sh.lowpass(c, L // 2), L)
+        s = data.area_rms(inp, L) or 1.0
+        cond1 = torch.from_numpy((inp / s)[None, None].astype(np.float32)).to(dev)
+        if cfg["model"] == "regress":
+            with torch.no_grad():
+                det = model(cond1).double().cpu().numpy()[:, 0]
+        else:
+            g = seeded_generator(dev, int(rng.integers(2**31)))
+            det = []
+            for k in range(0, M, chunk):
+                m = min(chunk, M - k)
+                det.append(model.sample(cond1.expand(m, -1, -1, -1).contiguous(), steps=steps,
+                                        generator=g).double().cpu().numpy()[:, 0])
+            det = np.concatenate(det)
+        ens = inp[None] + s * det
+        if project:
+            ens = np.stack([sh.project_consistent(inp, e, L // 2) for e in ens])
+        return ens
+
+    return method
+
+
+def main(argv=None):
+    import argparse
+
+    p = argparse.ArgumentParser()
+    p.add_argument("dataset")
+    p.add_argument("kind")
+    p.add_argument("split")
+    p.add_argument("rungs")
+    p.add_argument("--members", type=int, default=16)
+    p.add_argument("--out", required=True)
+    p.add_argument("--baselines", action="store_true")
+    p.add_argument("--ckpt", action="append", default=[], help="name=path/to/best.pt")
+    p.add_argument("--region", default="val_land")
+    p.add_argument("--rotate", default="none", choices=["none", "test_box"])
+    p.add_argument("--steps", type=int, default=32)
+    a = p.parse_args(argv)
+    rungs = tuple(int(x) for x in a.rungs.split(","))
+    months, coeffs = prep.load(Path("data/proc"), a.dataset)
+    methods: dict[str, Method] = {}
+    if a.baselines:
+        methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"), max(rungs)))
+    for spec in a.ckpt:
+        name, path = spec.split("=", 1)
+        methods[name] = model_method(path, steps=a.steps)
+    rows = run(methods, a.dataset, a.kind, a.split, rungs, a.members, a.region, Path(a.out),
+               rotate=a.rotate)
     print(summarise(rows))
+
+
+if __name__ == "__main__":
+    main()

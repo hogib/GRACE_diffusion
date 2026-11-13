@@ -1,0 +1,175 @@
+"""Train the diffusion model or the `regress` baseline (design doc §3, §7).
+
+Example (gate setup: train on R1 + R2 only):
+  uv run python -m grace_diffusion.train --dataset grace_ddk5 --kind grace \
+      --rungs 8,16 --model diffusion --steps 60000 --out runs/diffusion-ddk5-r12
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from . import data, prep
+from .model.edm import EDM, EMA, Regressor, count_params
+from .model.unet import UNet
+
+
+class BatchStream(torch.utils.data.IterableDataset):
+    """Endless stream of single-rung batches; reproducible per (seed, worker, k)."""
+
+    def __init__(self, sampler: data.Sampler, batch_size: int, seed: int):
+        self.sampler, self.batch_size, self.seed = sampler, batch_size, seed
+
+    def __iter__(self):
+        info = torch.utils.data.get_worker_info()
+        wid = info.id if info else 0
+        k = 0
+        while True:
+            b = self.sampler.batch(np.random.default_rng([self.seed, wid, k]), self.batch_size)
+            k += 1
+            yield {key: (torch.from_numpy(v) if isinstance(v, np.ndarray) else v)
+                   for key, v in b.items() if key in ("inp", "target", "weight", "L")}
+
+
+def to_dev(b, dev):
+    cond = b["inp"].to(dev, non_blocking=True)
+    detail = b["target"].to(dev, non_blocking=True) - cond
+    return detail, cond, b["weight"].to(dev, non_blocking=True)
+
+
+def estimate_sigma_data(sampler: data.Sampler, n: int = 40, batch: int = 16) -> float:
+    """Weighted RMS of the normalised detail over random training batches."""
+    num = den = 0.0
+    for k in range(n):
+        b = sampler.batch(np.random.default_rng([12345, k]), batch)
+        d = b["target"] - b["inp"]
+        num += float((b["weight"] * d ** 2).sum())
+        den += float(b["weight"].sum())
+    return float(np.sqrt(num / den))
+
+
+def build(cfg: dict) -> torch.nn.Module:
+    net = UNet(in_ch=2, out_ch=1, base=cfg["base"], mults=tuple(cfg["mults"]),
+               blocks=cfg["blocks"], dropout=cfg["dropout"])
+    if cfg["model"] == "diffusion":
+        return EDM(net, sigma_data=cfg["sigma_data"])
+    return Regressor(net)
+
+
+def load_checkpoint(path: str | Path, device="cpu") -> tuple[torch.nn.Module, dict]:
+    ck = torch.load(path, map_location=device, weights_only=False)
+    m = build(ck["cfg"]).to(device)
+    m.load_state_dict(ck["ema"])
+    m.eval()
+    return m, ck["cfg"]
+
+
+@torch.no_grad()
+def val_loss(model, batches, dev) -> float:
+    model.eval()
+    torch.manual_seed(0)
+    tot = n = 0.0
+    for b in batches:
+        detail, cond, w = to_dev(b, dev)
+        tot += float(model.loss(detail, cond, w)) * detail.shape[0]
+        n += detail.shape[0]
+    model.train()
+    return tot / n
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser()
+    p.add_argument("--dataset", default="grace_ddk5")
+    p.add_argument("--kind", default="grace")
+    p.add_argument("--rungs", default="8,16")
+    p.add_argument("--model", choices=["diffusion", "regress"], default="diffusion")
+    p.add_argument("--steps", type=int, default=60000)
+    p.add_argument("--batch", type=int, default=32)
+    p.add_argument("--lr", type=float, default=2e-4)
+    p.add_argument("--base", type=int, default=64)
+    p.add_argument("--mults", default="1,2,2,4")
+    p.add_argument("--blocks", type=int, default=2)
+    p.add_argument("--dropout", type=float, default=0.0)
+    p.add_argument("--ema", type=float, default=0.999)
+    p.add_argument("--rotate", default="random", choices=["random", "polar", "none"])
+    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--val-every", type=int, default=2000)
+    p.add_argument("--proc", default="data/proc")
+    p.add_argument("--out", required=True)
+    a = p.parse_args(argv)
+
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    torch.manual_seed(a.seed)
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    rungs = tuple(int(x) for x in a.rungs.split(","))
+    months, coeffs = prep.load(Path(a.proc), a.dataset)
+    train_s = data.Sampler(months, coeffs, a.kind, "train", rungs=rungs, rotate=a.rotate)
+    val_s = data.Sampler(months, coeffs, a.kind, "val", rungs=rungs, rotate="none")
+    cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
+               blocks=a.blocks, dropout=a.dropout, rungs=list(rungs), dataset=a.dataset,
+               kind=a.kind, rotate=a.rotate, seed=a.seed, steps=a.steps, batch=a.batch, lr=a.lr,
+               sigma_data=estimate_sigma_data(train_s))
+    model = build(cfg).to(dev)
+    cfg["params"] = count_params(model)
+    (out / "config.json").write_text(json.dumps(cfg, indent=2))
+    print(json.dumps(cfg), flush=True)
+
+    # fixed validation batches: every val month at every training rung, unrotated
+    val_batches = []
+    for L in rungs:
+        samples = val_s.fixed_set(L)
+        for i in range(0, len(samples), a.batch):
+            b = data.stack(samples[i: i + a.batch])
+            val_batches.append({k: (torch.from_numpy(v) if isinstance(v, np.ndarray) else v)
+                                for k, v in b.items() if k in ("inp", "target", "weight", "L")})
+
+    loader = torch.utils.data.DataLoader(BatchStream(train_s, a.batch, a.seed), batch_size=None,
+                                         num_workers=a.workers, pin_memory=True,
+                                         persistent_workers=a.workers > 0, prefetch_factor=4 if a.workers else None)
+    opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.0)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / 1000))
+    ema = EMA(model, a.ema)
+    ema_model = build(cfg).to(dev)
+    log = open(out / "log.csv", "w", newline="")
+    wr = csv.writer(log)
+    wr.writerow(["step", "train_loss", "val_loss_ema", "lr", "sec"])
+    t0, run_loss, best = time.time(), [], np.inf
+    for step, b in enumerate(loader, start=1):
+        detail, cond, w = to_dev(b, dev)
+        loss = model.loss(detail, cond, w)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        ema.update(model)
+        run_loss.append(float(loss))
+        if step % a.val_every == 0 or step == a.steps:
+            ema_model.load_state_dict(ema.shadow)
+            vl = val_loss(ema_model, val_batches, dev)
+            tl = float(np.mean(run_loss))
+            run_loss = []
+            wr.writerow([step, f"{tl:.5f}", f"{vl:.5f}", f"{sched.get_last_lr()[0]:.2e}",
+                         f"{time.time() - t0:.0f}"])
+            log.flush()
+            print(f"step {step} train {tl:.4f} val(ema) {vl:.4f} {time.time() - t0:.0f}s", flush=True)
+            ck = {"cfg": cfg, "ema": ema.shadow, "model": model.state_dict(), "step": step, "val": vl}
+            torch.save(ck, out / "last.pt")
+            if vl < best:
+                best = vl
+                torch.save(ck, out / "best.pt")
+        if step >= a.steps:
+            break
+    log.close()
+
+
+if __name__ == "__main__":
+    main()
