@@ -1,0 +1,54 @@
+\section{Synthesis: From GRACE Tasks to Transferable Techniques}
+\label{sec:synthesis}
+
+\subsection{What distinguishes the GRACE problem}
+
+GRACE enhancement differs from image super-resolution in four ways, each documented above.
+\begin{enumerate}
+  \item \emph{No fine-scale truth.} Below about 300\,km every product is a GRACE-constrained redistribution of mass according to a prior~\cite{xiong2026sysu,goracci2026nggm}. Validation there is indirect.
+  \item \emph{A non-trivial observation operator.} The measurement is a truncated, filtered or regularised functional of the mass field, with correlated, anisotropic errors~\cite{kusche2007approximate,loomis2019regularization,boergens2020covariance}. It is not a block average.
+  \item \emph{Very few samples.} About 250 monthly fields exist. Conditional deep models trained on so few samples risk memorisation, and the largest network can underperform~\cite{he2021deep}.
+  \item \emph{Trends are the science.} Groundwater depletion and ice loss are exactly the signals that hydrological priors and climate-driven reconstructions miss~\cite{springer2026review,humphrey2019gracerec,zhang2026groundwater}.
+\end{enumerate}
+
+\subsection{Task-to-technique map}
+
+Table~\ref{tab:map} pairs each GRACE task with the diffusion techniques that address it and the closest evidence from the works reviewed.
+
+\begin{table*}[!t]
+\centering
+\caption{GRACE tasks, their specific difficulty, candidate diffusion techniques and the closest published evidence.}
+\label{tab:map}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l L L L@{}}
+\toprule
+GRACE task & Specific difficulty & Candidate techniques & Closest evidence \\
+\midrule
+Missing months, inter-mission gap & temporal inpainting; error regime changes at the gap & mask-conditioned and spatio-temporal diffusion; trajectory-level score models & \cite{lugmayr2022repaint,tashiro2021csdi,rozet2023sda,kishikawa2025precipinpaint,barth2024dindiff} \\
+Reconstruction before 2002 & conditioning on climate forcing and sparse SLR/Swarm; trends & prior on long model simulations + likelihood guidance with observation errors & \cite{qian2026gencrest,song2025reconmost,uz2024highres,richter2021swarm_reconstruction} \\
+Spatial downscaling & no truth; prior dependence; conservation & residual diffusion; guided priors with the product's operator; hard constraints at inference & \cite{mardani2025corrdiff,lopezgomez2025r2d2,tie2026zssd,hess2025scaleadaptive,bochow2026smb,harder2023hard} \\
+Destriping and denoising & correlated noise of known structure; linear operator & SVD-domain and pseudoinverse posterior samplers; restoration bridges & \cite{kawar2022ddrm,song2023pigdm,chung2023dps,liu2023i2sb} \\
+Temporal disaggregation & monthly to sub-monthly; consistency with the monthly mean & space--time diffusion conditioned on means; temporal downscaling of hydrographs & \cite{bassetti2024diffesm,yang2026hdiffusion} \\
+Fusion with wells and GNSS & sparse point data of a different quantity & score-based assimilation with several observation operators & \cite{manshausen2025genda,chakraborty2025multimodal,li2026sage,pakrashi2026highplains} \\
+Ensembles and UQ & per-pixel spread today; calibration untested & posterior sampling; ensemble amplification; multi-seed training & \cite{li2024seeds,price2025gencast,singh2026intercomparison,gou2026uncertainty} \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Open problems}
+
+\begin{enumerate}
+  \item \emph{Operator-aware generation.} No learned GRACE method we read represents the true observation operator or its error covariance. Posterior samplers built for noisy linear operators~\cite{kawar2022ddrm,song2023pigdm,chung2023dps,tie2026zssd} offer a route, but none has been tested with spherical-harmonic truncation, decorrelation filters or a mascon resolution operator.
+  \item \emph{Hard conservation for non-block operators.} Hard constraints are exact and often more accurate~\cite{harder2023hard}, and can be imposed at inference~\cite{bochow2026smb,christopher2024projected,cheng2025eci}. They have been built for block averages, not for the GRACE operator. They must also be tied to observed mass, not to a model's~\cite{hess2022pcgan}.
+  \item \emph{Calibration.} No GRACE study we read reports CRPS, spread--skill ratios or rank histograms. Geoscience diffusion ensembles are often under-dispersive~\cite{mardani2025corrdiff,lopezgomez2025r2d2}, and seed variability can exceed sampling variability~\cite{singh2026intercomparison}. Formal GRACE covariance and error models~\cite{wahr2006accuracy,boergens2020covariance,loomis2019regularization,vandijk2014reanalysis} provide a reference.
+  \item \emph{Small data.} Options include pretraining on long hydrological-model or closed-loop simulations~\cite{dobslaw2015esa_esm}, training from incomplete data~\cite{barth2024dindiff}, pretrained encoders~\cite{ribeiro2026prithvi}, and holding out data from the base model in residual designs~\cite{couairon2024arches}. Each brings a domain shift that must be measured~\cite{tie2026zssd}.
+  \item \emph{Attribution by scale.} No study separates skill above and below the effective resolution, or the share of fine-scale variance coming from GRACE versus the prior. Spectral evaluation~\cite{lippe2023pderefiner,mardani2025corrdiff} and closed-loop truth~\cite{goracci2026nggm} make this possible.
+  \item \emph{Human signals and trends.} Generative priors trained on hydrological models inherit their missing groundwater abstraction. Change signals in extremes are underestimated by most generative downscalers~\cite{rampal2025intercomparison}. Trends need explicit evaluation.
+  \item \emph{Independent validation.} GNSS loading~\cite{carlson2022gnss_grace,wei2025cnn_gnss_loading}, wells~\cite{pascal2022evaluating,suryawanshi2026efficacy}, ocean-bottom pressure~\cite{chambers2012obp} and ice-mass budgets~\cite{velicogna2020continuity} are available but rarely used to test learned fine scales.
+  \item \emph{Leak-free benchmarks.} A common benchmark with sequential splits, closed-loop truth and probabilistic scores across tree, U-Net, GAN and diffusion baselines does not yet exist.
+  \item \emph{Future missions.} Learned methods should transfer to MAGIC-type inputs, which carry more information~\cite{goracci2026nggm,pfeffer2026nggm}.
+\end{enumerate}
+
+\subsection{Related in-house work}
+
+In a related problem we generate daily GNSS position residual series at locations without a station. A conditional diffusion model, conditioned on neighbouring stations through cross-attention with relative-offset encodings, is evaluated with proper scores, calibration, spectra and a classifier two-sample test against kriging and Gaussian-process baselines~\cite{imonet}. Its emphasis on generators judged as samples rather than point predictions, on blind and leak-free evaluation, and on strong Gaussian baselines carries over to GRACE. Its data, which are scattered stations and daily series, do not.

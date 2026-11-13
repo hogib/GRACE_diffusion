@@ -1,0 +1,79 @@
+\section{Deep Learning on GRACE Products}
+\label{sec:mlgrace}
+
+Learned methods applied to gridded GRACE TWS anomalies fall into five task families: gap filling, reconstruction beyond the mission record, spatial and temporal downscaling, forecasting, and learned error correction. A sixth concern, uncertainty quantification, cuts across them. Nearly all of these methods share their predictors. Meteorological forcing (precipitation, temperature, evapotranspiration from ERA5, ERA5-Land or GLDAS) is almost universal. Storage simulated by a land-surface or global hydrological model is common, as are static fields such as topography and land cover~\cite{sun2019combining,mo2022bayesian,gou2024global}. Table~\ref{tab:mlgrace} lists representative studies.
+
+\begin{table*}[!t]
+\centering
+\caption{Representative learned methods for GRACE TWS products (full texts read). UQ: form of uncertainty reported. Split: how evaluation months were chosen.}
+\label{tab:mlgrace}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l l L L l l@{}}
+\toprule
+Study & Task & Method & Prior / inputs & UQ & Split \\
+\midrule
+Sun et al.~\cite{sun2019combining} & model correction, gap & CNNs learn NOAH$-$GRACE mismatch & GLDAS-NOAH, P, T & none & temporal \\
+Mo et al.~\cite{mo2022bayesian} & inter-mission gap & Bayesian CNN (SVGD, 20 particles) & ERA5-Land P, T, storage & per-pixel & temporal \\
+Humphrey \& Gudmundsson~\cite{humphrey2019gracerec} & reconstruction 1901-- & statistical water-store model & P, T & 100-member ens. & detrended \\
+Yin et al.~\cite{yin2023gtwsmlrec} & reconstruction 1940-- & RF (with MARS, GLM, ANN, GAM) & climate, land use, LAI & none & random \\
+Palazzoli et al.~\cite{palazzoli2025graice} & reconstruction 1984-- & LSTM / BiLSTM & ERA5(-Land), SIF & none & temporal \\
+Arzoumanidis et al.~\cite{arzoumanidis2026stgnn} & reconstruction 1940-- & spatio-temporal GNN & ERA5 P, ET, runoff & none & sequential \\
+Uz et al.~\cite{uz2024highres} & hindcast 1994-- & residual conv.\ autoencoder & SLR fields, ERA5 & none & random \\
+He et al.~\cite{he2021deep} & downscaling 11$\times$ & SRCNN, VDSR, RCAN & EALCO as truth & none & -- \\
+Gou \& Soja~\cite{gou2024global} & downscaling to 0.5$^\circ$ & residual enc.-dec., dual loss & WGHM, GLDAS & deep ensemble & -- \\
+Uz et al.~\cite{uz2026dynamic} & downscaling to $\sim$50\,km & variational U-Net, MC dropout & WGHM, ERA5 & per-pixel & -- \\
+Li et al.~\cite{li2026physically} & downscaling 3$^\circ\!\to$0.1$^\circ$ & U-Net, conservation loss & PCR-GLOBWB 2 & seed ensemble & -- \\
+Goracci et al.~\cite{goracci2026nggm} & downscaling to 1$^\circ$ & U-Net, aggregation loss only & ERA5-Land, topography & none & closed-loop \\
+Dombos et al.~\cite{dombos2026dshift} & daily high-res fields & ESRGAN-type GAN & daily SH solutions & none & tuning years \\
+Mo et al.~\cite{mo2025nearrealtime} & nowcast over latency & Bayesian CNN & past TWS, ERA5-Land & per-pixel & temporal \\
+Steidl et al.~\cite{steidl2026hignn} & seasonal forecast & hierarchical GNN + LSTM & ERA5 & none & temporal \\
+Chen et al.~\cite{chen2025efficient} & learned destriping & Bayesian-optimised CNN, attention & Level-2 SH & none & -- \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Gap filling}
+
+The first deep-learning study on GRACE did not predict GRACE directly. Sun et al.\ trained convolutional networks (VGG16, U-Net and SegNet variants) to predict the spatio-temporal mismatch between GLDAS-NOAH and GRACE over India. The corrected model output reached a country-average correlation of 0.94 and an NSE of 0.87. Because it no longer needs GRACE at prediction time, it also fills the inter-mission gap. The learned mismatch correlated with in-situ groundwater anomalies, so it largely represents the groundwater storage that the land-surface model lacks~\cite{sun2019combining}. Mo et al.\ filled the gap globally with a Bayesian CNN with residual connections and attention, trained by Stein variational gradient descent with an aleatoric noise term. It outperformed land-surface models and earlier gap products, most of all in arid regions, and returned predictive uncertainty~\cite{mo2022bayesian}.
+
+Statistical gap fillers remain strong baselines. CIDR, an iterative singular-spectrum method with component-specific interpolation, improved relative RMS by 17.5--18.6\% and NSE by 27.6--42.6\% over standard SSA on artificial gaps in a 0.5$^\circ$ downscaled product~\cite{gao2025cidr}. A regional study split TWS into a trend, attributed to human activity, and a detrended part predicted by nine learners from model outputs. The explicit separation of trend from variability is its notable feature~\cite{mousavimehr2025nonstationary}.
+
+\subsection{Reconstruction beyond the record}
+
+Reconstructions extend TWS before 2002 using climate forcing. GRACE-REC fits a linear water-store model to detrended, deseasonalised GRACE and drives it with century-long precipitation and temperature. It provides 100-member ensembles for each of six forcing--product combinations~\cite{humphrey2019gracerec}. Trends and the seasonal cycle are removed by design. GTWS-MLrec compares five learners and reconstructs 1940--2022 at 0.25$^\circ$. It is evaluated against the land--ocean mass budget, 341 basin water budgets and over 10{,}000 streamflow gauges, but its train/test split is random in time~\cite{yin2023gtwsmlrec}. GRAiCE uses LSTM and BiLSTM networks with solar-induced fluorescence among its inputs and outperforms GRACE-REC against observed TWS~\cite{palazzoli2025graice}. A tree-based reconstruction selects predictors per grid cell with a Bayesian network. Extra-trees regression, not the CNN option, performed best in most cells~\cite{mandal2025reconstruction}. A spatio-temporal graph network with a fixed, interpretable adjacency reaches basin correlations within 0.025 of these products using only three forcing variables and a sequential split~\cite{arzoumanidis2026stgnn}. On the geodetic side, a residual convolutional autoencoder maps coarse SLR-derived mass fields and ERA5 variables to GRACE-like 1$^\circ$ grids from 1994~\cite{uz2024highres}. A conditional GAN calibrates WGHM against GRACE for long-term hindcasts, used as a deterministic generator~\cite{wang2024recgan}. Driven by climate alone, these reconstructions cannot represent human-driven trends such as groundwater depletion.
+
+\subsection{Spatial and temporal downscaling}
+
+\paragraph{Pixel-wise learning} The earliest downscaling methods fitted regressions (random forests, boosted trees, small networks) at GRACE scale and applied them to fine-scale predictors. Gains against independent data can be small. Over a crystalline aquifer in southern India, random-forest downscaling to 0.5$^\circ$ raised the mean correlation with 1006 wells from 0.76 to 0.79. The authors therefore propose measuring a ``downscaling gain'' against the non-downscaled product~\cite{pascal2022evaluating}. A partial-least-squares method conserves mass at catchment scale for 160 catchments. Its authors decline to rank input datasets because grid-scale validation is not possible~\cite{vishwakarma2021plsr}. A global 1\,km groundwater product chose gradient boosting over a deep network. It reaches $R^2 = 0.972$ when re-aggregated to GRACE scale but $R^2 = 0.538$ against held-out wells, and it shows a trend-sign mismatch in the High Plains aquifer for 2003--2013~\cite{zhang2026groundwater}.
+
+\paragraph{Image super-resolution networks} He et al.\ transplanted SRCNN, VDSR and RCAN to downscale 110\,km JPL fields to 10\,km over Canada. A land-surface model served as high-resolution truth, and inputs were built by bicubic degradation. Re-aggregated RMSE was 14.4\,mm for VDSR, against 71.6\,mm for linear regression. The largest network (RCAN) underperformed the smaller VDSR, which the authors attribute to the 158 months of data~\cite{he2021deep}.
+
+\paragraph{Self-supervised networks with a dual loss} The approach that has since become standard drops the model-as-truth assumption. Gou and Soja train a residual encoder-decoder with two losses. One requires agreement with GRACE after spatial averaging. The other requires correlation with WGHM fine-scale patterns. Their global 0.5$^\circ$ product has an area-weighted basin RMSE of 21.9\,mm against GRACE over 288 basins (49.2\,mm for WGHM), and deep ensembles give a median uncertainty of 7.3\,mm~\cite{gou2024global}. The same design downscales ocean bottom pressure to 0.25$^\circ$ by fusing two ocean reanalyses, partly to reduce dependence on a single prior~\cite{gou2025obp}. Uz et al.\ use a variational U-Net with Monte Carlo dropout and a dynamically weighted soft constraint between JPL mascons and WGHM/ERA5 patterns. They report a 95th-percentile uncertainty of about 3.2--3.3\,cm~\cite{uz2026dynamic}. Li et al.\ downscale from 3$^\circ$ to 0.1$^\circ$ over China with PCR-GLOBWB 2 as the pattern prior. They obtain a median correlation of 0.95 at 3$^\circ$ but 0.65 against wells where irrigation is intensive~\cite{li2026physically}. Goracci et al.\ keep only the aggregation-consistency loss, with fine structure supplied by ERA5-Land, topography and land cover. They state explicitly that the fine-scale redistribution remains under-constrained. Using simulated NGGM and MAGIC products, they show that the same network produces better 1$^\circ$ fields from richer inputs~\cite{goracci2026nggm}.
+
+\paragraph{Adversarial and temporal downscaling} D-SHIFT trains an ESRGAN-type generator with a U-Net discriminator to transfer mascon-level spatial detail to daily SH solutions. Its monthly global RMSE is about 2.3\,cm. The authors report increased high-frequency noise and isolated daily excursions, there is no ensemble, and the held-out years were also used for tuning~\cite{dombos2026dshift}.
+
+\paragraph{Independent evaluations} Intercomparisons by third parties are beginning. Over 288 basins, the median RMSE against GRACE is 1.87\,cm for the Gou--Soja product, 2.24\,cm for a non-learned joint inversion and 3.40\,cm for an assimilation product. The joint-inversion authors describe their own product as a GRACE-constrained reconstruction informed by high-resolution spatial priors~\cite{xiong2026sysu}. A well-based evaluation over India found that a mass-conserving statistical method improved on the mascon product in 17 of 22 mascons with wells, and the Gou--Soja product in 16~\cite{suryawanshi2026efficacy}. Pakrashi et al.\ take a statistical rather than learned route. A Bayesian hierarchical model links CSR mascon blocks and well observations to one latent fine-scale Gaussian Markov random field and returns posterior standard-deviation maps~\cite{pakrashi2026highplains}. It is the only study we read that writes an explicit areal observation model for GRACE and returns a posterior.
+
+\subsection{Forecasting and nowcasting}
+
+GRACE products appear with a latency of about three months. Mo et al.\ predict TWS over this latency from twelve past months and ERA5-Land forcing with a Bayesian CNN. They obtain median correlations of 0.92--0.95 one to three months ahead and detect droughts before GRACE data are released~\cite{mo2025nearrealtime}. Because forcing for the target months is an input, this is nowcasting rather than forecasting. Steidl et al.\ forecast up to six months with a hierarchical graph network and an LSTM trained on a reconstruction. One-month RMSE is 1.83\,cm against 3.70\,cm for climatology, and skill is lost by six months~\cite{steidl2026hignn}. Basin-scale studies compare backpropagation networks, LSTMs and BiLSTMs with attention, with no consistent winner across regions~\cite{lu2024changes}. A physics-constrained LSTM separates groundwater from GRACE TWS. It bounds trends by the moisture supply available from the atmosphere and enforces basin mass balance during training~\cite{sarkar2026physics}.
+
+\subsection{Learned error correction and signal separation}
+
+Learning directly on Level-2 data is rarer. Chen et al.\ train a Bayesian-optimised CNN with spatial attention to map Level-2 data to TWS, using processed Level-3 and mascon fields as targets. They reach a test NSE of 0.60 and suggest recovery from Level-1 data as future work~\cite{chen2025efficient}. Heller-Kaikov et al.\ compare a conditional GAN with principal component analysis for separating atmosphere--ocean from hydrological signals in closed-loop synthetic data. The two achieve comparable errors~\cite{hellerkaikov2023signal}.
+
+\subsection{Uncertainty quantification}
+
+Uncertainty, where reported, comes from Bayesian CNN particles~\cite{mo2022bayesian,mo2025nearrealtime}, deep ensembles~\cite{gou2024global}, Monte Carlo dropout~\cite{uz2026dynamic}, seed ensembles~\cite{li2026physically} or statistical ensembles~\cite{humphrey2019gracerec}. All of these are summarised as per-pixel spread. None of the deep-learning studies we read draws spatially coherent sample fields or tests calibration with proper scores, spread--skill ratios or rank histograms. A survey of uncertainty quantification for deep-learning climate variables, with GRACE as a worked example, shows why this matters. In its application cases, ignoring input uncertainty strongly underestimates total uncertainty, and ignoring model uncertainty underestimates it as well~\cite{gou2026uncertainty}.
+
+\subsection{Validation practice and recurring critiques}
+
+Five issues recur across the studies read.
+\begin{enumerate}
+  \item \emph{Consistency at GRACE scale is enforced, not tested.} Re-aggregation scores are high because the loss requires them~\cite{goracci2026nggm,zhang2026groundwater}. Independent data are needed below 300\,km, and there the scores fall~\cite{zhang2026groundwater,li2026physically}.
+  \item \emph{Fine scale comes from the prior.} WGHM, PCR-GLOBWB or ERA5 supply the sub-GRACE structure~\cite{gou2024global,uz2026dynamic,li2026physically,xiong2026sysu}. Hydrological models are weakest where GRACE matters most: irrigation, groundwater abstraction, reservoirs and glaciers~\cite{springer2026review}.
+  \item \emph{Mass consistency is soft.} Every network listed in Table~\ref{tab:mlgrace} that enforces agreement with GRACE does so through a loss penalty.
+  \item \emph{The observation operator is a block average.} No learned method represents SH truncation, the filter or the mascon resolution operator, or the correlated error covariance.
+  \item \emph{Small samples and leaky splits.} With about 250 monthly fields, random month splits~\cite{yin2023gtwsmlrec,uz2024highres} and reuse of tuning years for evaluation~\cite{dombos2026dshift} inflate reported skill. Sequential splits are used in~\cite{arzoumanidis2026stgnn,lu2024changes,steidl2026hignn}.
+\end{enumerate}
+A review of GRACE data assimilation names the resolution mismatch between GRACE and models as an open problem, and finds no consensus on the best assimilation approach~\cite{springer2026review}.

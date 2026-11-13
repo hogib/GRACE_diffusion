@@ -1,0 +1,56 @@
+\documentclass[journal]{IEEEtran}
+
+\usepackage{iftex}
+\ifTUTeX
+  \usepackage{fontspec}
+  \setmainfont{texgyretermes}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+    ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\fi
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cite}
+
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcommand{\TWS}{\mathrm{TWS}}
+
+\begin{document}
+
+\title{Deep Learning and Diffusion Models for Enhancing GRACE/GRACE-FO Satellite Gravimetry: A Survey}
+
+\author{H.~O\u{g}uz~Bolat%
+\thanks{Draft of \today, prepared with Claude Code. Only works whose full text was obtained and read are cited; see Section~\ref{sec:method}.}}
+
+\markboth{Draft}{Bolat: Deep Learning and Diffusion Models for GRACE Gravimetry}
+
+\maketitle
+
+\begin{abstract}
+The GRACE and GRACE-FO missions have produced the only global, direct record of terrestrial water storage change since 2002. That record is coarse (an effective resolution of roughly 300\,km), noisy in structured ways, and interrupted by an eleven-month gap between the two missions. Machine learning is now used at almost every stage that follows the gravity solutions: filling gaps, reconstructing storage before 2002, downscaling to finer grids, forecasting, and correcting errors. In parallel, diffusion models have become the leading generative approach for downscaling, data assimilation and gap filling in weather, climate and ocean science. This survey brings the two literatures together. We review the measurement system and its error structure, the deep-learning methods applied to GRACE products and to the upstream processing chain, the foundations of diffusion models, and their applications in the geosciences. We restrict citations to works we have read in full. Three findings stand out. First, nearly all learned GRACE products are deterministic regressors whose fine-scale content is inherited from a hydrological-model or covariate prior; uncertainty, where reported, is per-pixel and uncalibrated. Second, none of the learned methods we read represents the actual GRACE observation operator or its correlated error covariance, and mass consistency is enforced only through soft penalties. Third, adjacent fields have already developed the needed pieces: residual diffusion, posterior sampling with explicit measurement operators, hard conservation constraints at inference time, and training from incomplete data. None of these has yet been applied to satellite gravimetry in the literature we could read. We close with a map from GRACE tasks to transferable diffusion techniques and a list of open problems.
+\end{abstract}
+
+\begin{IEEEkeywords}
+GRACE, GRACE-FO, satellite gravimetry, terrestrial water storage, deep learning, diffusion models, downscaling, gap filling, uncertainty quantification.
+\end{IEEEkeywords}
+
+\input{sections/01_intro}
+\input{sections/02_grace}
+\input{sections/03_ml_grace}
+\input{sections/04_geodetic_ml}
+\input{sections/05_diffusion_foundations}
+\input{sections/06_diffusion_geoscience}
+\input{sections/07_synthesis}
+% Proposed methodology: intentionally omitted until it has been discussed.
+\input{sections/08_conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

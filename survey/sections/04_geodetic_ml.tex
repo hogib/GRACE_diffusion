@@ -1,0 +1,38 @@
+\section{Machine Learning in the Gravimetry Chain, Complementary Sensors and Assimilation}
+\label{sec:geodetic}
+
+The processing chain runs from Level-1 instrument data, through Level-2 harmonics, to post-processed grids. Machine learning has so far touched it mostly at its edges.
+
+\subsection{Level-1 instrument data}
+
+The degraded GRACE-FO accelerometer made accelerometer transplant an operational need. The operational transplant leaves $C_{20}$ and $C_{30}$ sensitive to how it is done. A physics-based recovery from non-gravitational force models reduces noise in the monthly fields and improves both coefficients~\cite{behzadpour2021acc_recovery}. Learned versions are emerging. Multilayer perceptrons, LSTMs and BiLSTMs transplant accelerometer data in closed-loop simulations of a future mission with cold-atom sensors~\cite{romeshkani2025ml_transplant}. Self-supervised Noise2Noise training denoises GRACE-FO and Taiji-1 accelerometer data~\cite{yang2023noise2noise_acc}. We found no learned treatment of ranging noise.
+
+\subsection{Level-2 filtering and mascon regularisation}
+
+The classical filters described in Section~\ref{sec:grace} and the hand-designed mascon regularisations of the analysis centres~\cite{wiese2016leakage,loomis2019regularization} remain standard. Learned work at Level-2 is limited to signal separation~\cite{hellerkaikov2023signal} and to the Level-2-to-TWS mapping of~\cite{chen2025efficient}. Loomis et al.\ show that a regularised mascon solution is biased and that its error is noise plus leakage~\cite{loomis2019regularization}. A learned prior would have to be characterised in the same terms. We found no learned prior used inside a mascon or SH inversion.
+
+\subsection{Neural representations of the gravity field}
+
+Physics-informed neural networks represent the gravitational potential as a continuous function constrained by Laplace's equation. The third generation of these models addresses feature divergence, low-altitude sample bias, numerical instability and extrapolation error~\cite{martin2024pinngm3}. Neural density fields learn the mass distribution of small bodies from their gravity signal~\cite{izzo2022geodesynets}. Both have been applied to static fields only.
+
+\subsection{Low degrees and glacial isostatic adjustment}
+
+Degree~1 is estimated from GRACE and an ocean model~\cite{swenson2008geocenter}, and $C_{20}$ from laser ranging~\cite{loomis2019oblateness}. No learned estimator appeared among the works we read. For glacial isostatic adjustment, neural networks have been trained as fast surrogates of forward Earth-deformation models~\cite{love2024gia_surrogate}, not as estimators from GRACE data.
+
+\subsection{Complementary sensors}
+
+\paragraph{Swarm} GPS-derived gravity from the Swarm satellites carries information to roughly spherical-harmonic degree~12. It needs about 750\,km smoothing to agree with GRACE at about 4\,cm over land~\cite{teixeira2020swarm_gfm,luck2018swarm_ocean}. Projecting Swarm fields onto GRACE empirical orthogonal functions raises their effective resolution~\cite{richter2021swarm_reconstruction}.
+
+\paragraph{Satellite laser ranging} EOF-based hybrid SLR fields extend low-resolution mass change before 2002~\cite{locher2021slr_hybrid}. The residual autoencoder of~\cite{uz2024highres} learns the mapping from SLR to GRACE resolution.
+
+\paragraph{GNSS loading} Vertical displacements of GNSS stations respond elastically to surface loading and give an independent constraint on TWS at finer scales than GRACE. Carlson et al.\ invert GNSS and GRACE jointly with a wavelet decomposition~\cite{carlson2022gnss_grace}. A 3D CNN that combines 41 GNSS stations with GRACE outperforms a load Green's-function inversion in reproducing the observed displacements~\cite{wei2025cnn_gnss_loading}.
+
+\paragraph{Multi-sensor reanalysis} A global water-cycle reanalysis for 2003--2012 merges GRACE and water-level altimetry with a multi-model hydrological ensemble. It estimates errors by triple collocation: 11--12\,mm for GRACE storage over land against 17--28\,mm for model storage changes~\cite{vandijk2014reanalysis}.
+
+\subsection{Data assimilation and hybrid models}
+
+GRACE is assimilated into land-surface and hydrological models to downscale it and to partition storage. A recent review of about 60 such studies finds the resolution mismatch unresolved, along with the choice of assimilation scheme~\cite{springer2026review}. Learned components appear in three ways. Networks learn the residual between a model and GRACE~\cite{sun2019combining}. Self-supervised networks act as the assimilation step~\cite{gou2024global,gou2025obp}. And neural components are embedded in differentiable hydrological models trained against GRACE together with runoff, evapotranspiration and snow~\cite{kraft2022h2m,baghirov2025h2mv}. A review gives the general case for differentiable modelling~\cite{shen2023differentiable}. In all of these, GRACE acts as a weak, coarse-scale constraint on a model that supplies the fine scales.
+
+\subsection{Benchmarks}
+
+No community benchmark exists for learned gravimetry processing. The closest resource is closed-loop simulation. The ESA Earth System Model supplies 6-hourly mass fields with known truth~\cite{dobslaw2015esa_esm}. A de-aliasing error model supplies realistic perturbations~\cite{dobslaw2016dealiasing_errors}. Mission simulators produce the corresponding noisy solutions~\cite{pfeffer2026nggm,goracci2026nggm}. Real-data checks can use GNSS loading~\cite{carlson2022gnss_grace}, ocean-bottom pressure~\cite{chambers2012obp}, ice-sheet mass budgets~\cite{velicogna2020continuity} and wells~\cite{pascal2022evaluating,suryawanshi2026efficacy}. Calibration can be checked against formal covariance and error models~\cite{wahr2006accuracy,boergens2020covariance,loomis2019regularization}.

@@ -1,0 +1,630 @@
+% diffusion_core.bib -- foundations of diffusion / score-based generative models
+% Metadata verified against arXiv API and Crossref (2026-11-13).
+
+% ---------------- Core foundations ----------------
+@inproceedings{sohldickstein2015deep,
+  author    = {Sohl-Dickstein, Jascha and Weiss, Eric A. and Maheswaranathan, Niru and Ganguli, Surya},
+  title     = {Deep Unsupervised Learning using Nonequilibrium Thermodynamics},
+  booktitle = {Proceedings of the 32nd International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {37},
+  pages     = {2256--2265},
+  year      = {2015},
+  eprint    = {1503.03585},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{ho2020ddpm,
+  author    = {Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
+  title     = {Denoising Diffusion Probabilistic Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {33},
+  pages     = {6840--6851},
+  year      = {2020},
+  eprint    = {2006.11239},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{song2019ncsn,
+  author    = {Song, Yang and Ermon, Stefano},
+  title     = {Generative Modeling by Estimating Gradients of the Data Distribution},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {32},
+  year      = {2019},
+  eprint    = {1907.05600},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{song2021scoresde,
+  author    = {Song, Yang and Sohl-Dickstein, Jascha and Kingma, Diederik P. and Kumar, Abhishek and Ermon, Stefano and Poole, Ben},
+  title     = {Score-Based Generative Modeling through Stochastic Differential Equations},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  eprint    = {2011.13456},
+  archivePrefix = {arXiv}
+}
+
+@article{hyvarinen2005score,
+  author  = {Hyv{\"a}rinen, Aapo},
+  title   = {Estimation of Non-Normalized Statistical Models by Score Matching},
+  journal = {Journal of Machine Learning Research},
+  volume  = {6},
+  pages   = {695--709},
+  year    = {2005},
+  url     = {https://jmlr.org/papers/v6/hyvarinen05a.html}
+}
+
+@article{vincent2011connection,
+  author  = {Vincent, Pascal},
+  title   = {A Connection Between Score Matching and Denoising Autoencoders},
+  journal = {Neural Computation},
+  volume  = {23},
+  number  = {7},
+  pages   = {1661--1674},
+  year    = {2011},
+  doi     = {10.1162/NECO_a_00142}
+}
+
+@article{anderson1982reverse,
+  author  = {Anderson, Brian D. O.},
+  title   = {Reverse-Time Diffusion Equation Models},
+  journal = {Stochastic Processes and their Applications},
+  volume  = {12},
+  number  = {3},
+  pages   = {313--326},
+  year    = {1982},
+  doi     = {10.1016/0304-4149(82)90051-5}
+}
+
+@inproceedings{song2021ddim,
+  author    = {Song, Jiaming and Meng, Chenlin and Ermon, Stefano},
+  title     = {Denoising Diffusion Implicit Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  eprint    = {2010.02502},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{nichol2021improved,
+  author    = {Nichol, Alexander Quinn and Dhariwal, Prafulla},
+  title     = {Improved Denoising Diffusion Probabilistic Models},
+  booktitle = {Proceedings of the 38th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {139},
+  pages     = {8162--8171},
+  year      = {2021},
+  eprint    = {2102.09672},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{karras2022edm,
+  author    = {Karras, Tero and Aittala, Miika and Aila, Timo and Laine, Samuli},
+  title     = {Elucidating the Design Space of Diffusion-Based Generative Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2206.00364},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{rombach2022ldm,
+  author    = {Rombach, Robin and Blattmann, Andreas and Lorenz, Dominik and Esser, Patrick and Ommer, Bj{\"o}rn},
+  title     = {High-Resolution Image Synthesis with Latent Diffusion Models},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {10674--10685},
+  year      = {2022},
+  doi       = {10.1109/CVPR52688.2022.01042},
+  eprint    = {2112.10752},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{dhariwal2021beat,
+  author    = {Dhariwal, Prafulla and Nichol, Alexander},
+  title     = {Diffusion Models Beat {GANs} on Image Synthesis},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {34},
+  year      = {2021},
+  eprint    = {2105.05233},
+  archivePrefix = {arXiv}
+}
+
+@misc{ho2022cfg,
+  author    = {Ho, Jonathan and Salimans, Tim},
+  title     = {Classifier-Free Diffusion Guidance},
+  howpublished = {NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications},
+  year      = {2022},
+  eprint    = {2207.12598},
+  archivePrefix = {arXiv}
+}
+
+@misc{batzolis2021conditional,
+  author    = {Batzolis, Georgios and Stanczuk, Jan and Sch{\"o}nlieb, Carola-Bibiane and Etmann, Christian},
+  title     = {Conditional Image Generation with Score-Based Diffusion Models},
+  year      = {2021},
+  eprint    = {2111.13606},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Fast sampling / distillation ----------------
+@inproceedings{salimans2022progressive,
+  author    = {Salimans, Tim and Ho, Jonathan},
+  title     = {Progressive Distillation for Fast Sampling of Diffusion Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  eprint    = {2202.00512},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{lu2022dpmsolver,
+  author    = {Lu, Cheng and Zhou, Yuhao and Bao, Fan and Chen, Jianfei and Li, Chongxuan and Zhu, Jun},
+  title     = {{DPM-Solver}: A Fast {ODE} Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2206.00927},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{song2023consistency,
+  author    = {Song, Yang and Dhariwal, Prafulla and Chen, Mark and Sutskever, Ilya},
+  title     = {Consistency Models},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {202},
+  pages     = {32211--32252},
+  year      = {2023},
+  eprint    = {2303.01469},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Flows, interpolants, bridges ----------------
+@inproceedings{lipman2023flow,
+  author    = {Lipman, Yaron and Chen, Ricky T. Q. and Ben-Hamu, Heli and Nickel, Maximilian and Le, Matt},
+  title     = {Flow Matching for Generative Modeling},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  eprint    = {2210.02747},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{liu2023rectified,
+  author    = {Liu, Xingchao and Gong, Chengyue and Liu, Qiang},
+  title     = {Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  eprint    = {2209.03003},
+  archivePrefix = {arXiv}
+}
+
+@misc{albergo2023interpolants,
+  author    = {Albergo, Michael S. and Boffi, Nicholas M. and Vanden-Eijnden, Eric},
+  title     = {Stochastic Interpolants: A Unifying Framework for Flows and Diffusions},
+  year      = {2023},
+  eprint    = {2303.08797},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{debortoli2021dsb,
+  author    = {De Bortoli, Valentin and Thornton, James and Heng, Jeremy and Doucet, Arnaud},
+  title     = {Diffusion {Schr{\"o}dinger} Bridge with Applications to Score-Based Generative Modeling},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {34},
+  year      = {2021},
+  eprint    = {2106.01357},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{liu2023i2sb,
+  author    = {Liu, Guan-Horng and Vahdat, Arash and Huang, De-An and Theodorou, Evangelos A. and Nie, Weili and Anandkumar, Anima},
+  title     = {{I$^2$SB}: Image-to-Image {Schr{\"o}dinger} Bridge},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {202},
+  year      = {2023},
+  eprint    = {2302.05872},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Restoration: SR, inpainting, editing ----------------
+@article{saharia2023sr3,
+  author  = {Saharia, Chitwan and Ho, Jonathan and Chan, William and Salimans, Tim and Fleet, David J. and Norouzi, Mohammad},
+  title   = {Image Super-Resolution via Iterative Refinement},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume  = {45},
+  number  = {4},
+  pages   = {4713--4726},
+  year    = {2023},
+  doi     = {10.1109/TPAMI.2022.3204461},
+  eprint  = {2104.07636},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{saharia2022palette,
+  author    = {Saharia, Chitwan and Chan, William and Chang, Huiwen and Lee, Chris and Ho, Jonathan and Salimans, Tim and Fleet, David and Norouzi, Mohammad},
+  title     = {Palette: Image-to-Image Diffusion Models},
+  booktitle = {ACM SIGGRAPH 2022 Conference Proceedings},
+  pages     = {1--10},
+  year      = {2022},
+  doi       = {10.1145/3528233.3530757},
+  eprint    = {2111.05826},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{lugmayr2022repaint,
+  author    = {Lugmayr, Andreas and Danelljan, Martin and Romero, Andres and Yu, Fisher and Timofte, Radu and Van Gool, Luc},
+  title     = {{RePaint}: Inpainting using Denoising Diffusion Probabilistic Models},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {11451--11461},
+  year      = {2022},
+  doi       = {10.1109/CVPR52688.2022.01117},
+  eprint    = {2201.09865},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{meng2022sdedit,
+  author    = {Meng, Chenlin and He, Yutong and Song, Yang and Song, Jiaming and Wu, Jiajun and Zhu, Jun-Yan and Ermon, Stefano},
+  title     = {{SDEdit}: Guided Image Synthesis and Editing with Stochastic Differential Equations},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  eprint    = {2108.01073},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{yue2023resshift,
+  author    = {Yue, Zongsheng and Wang, Jianyi and Loy, Chen Change},
+  title     = {{ResShift}: Efficient Diffusion Model for Image Super-resolution by Residual Shifting},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {36},
+  year      = {2023},
+  eprint    = {2307.12348},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{luo2023irsde,
+  author    = {Luo, Ziwei and Gustafsson, Fredrik K. and Zhao, Zheng and Sj{\"o}lund, Jens and Sch{\"o}n, Thomas B.},
+  title     = {Image Restoration with Mean-Reverting Stochastic Differential Equations},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {202},
+  year      = {2023},
+  eprint    = {2301.11699},
+  archivePrefix = {arXiv}
+}
+
+@article{delbracio2023indi,
+  author  = {Delbracio, Mauricio and Milanfar, Peyman},
+  title   = {Inversion by Direct Iteration: An Alternative to Denoising Diffusion for Image Restoration},
+  journal = {Transactions on Machine Learning Research},
+  year    = {2023},
+  eprint  = {2303.11435},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{bansal2023cold,
+  author    = {Bansal, Arpit and Borgnia, Eitan and Chu, Hong-Min and Li, Jie S. and Kazemi, Hamid and Huang, Furong and Goldblum, Micah and Geiping, Jonas and Goldstein, Tom},
+  title     = {Cold Diffusion: Inverting Arbitrary Image Transforms Without Noise},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {36},
+  year      = {2023},
+  eprint    = {2208.09392},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{rissanen2023heat,
+  author    = {Rissanen, Severi and Heinonen, Markus and Solin, Arno},
+  title     = {Generative Modelling With Inverse Heat Dissipation},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  eprint    = {2206.13397},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Inverse problems ----------------
+@inproceedings{kawar2021snips,
+  author    = {Kawar, Bahjat and Vaksman, Gregory and Elad, Michael},
+  title     = {{SNIPS}: Solving Noisy Inverse Problems Stochastically},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {34},
+  year      = {2021},
+  eprint    = {2105.14951},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{kawar2022ddrm,
+  author    = {Kawar, Bahjat and Elad, Michael and Ermon, Stefano and Song, Jiaming},
+  title     = {Denoising Diffusion Restoration Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2201.11793},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{song2022medical,
+  author    = {Song, Yang and Shen, Liyue and Xing, Lei and Ermon, Stefano},
+  title     = {Solving Inverse Problems in Medical Imaging with Score-Based Generative Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  eprint    = {2111.08005},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{chung2022mcg,
+  author    = {Chung, Hyungjin and Sim, Byeongsu and Ryu, Dohoon and Ye, Jong Chul},
+  title     = {Improving Diffusion Models for Inverse Problems using Manifold Constraints},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2206.00941},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{chung2023dps,
+  author    = {Chung, Hyungjin and Kim, Jeongsol and Mccann, Michael T. and Klasky, Marc L. and Ye, Jong Chul},
+  title     = {Diffusion Posterior Sampling for General Noisy Inverse Problems},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  eprint    = {2209.14687},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{song2023pigdm,
+  author    = {Song, Jiaming and Vahdat, Arash and Mardani, Morteza and Kautz, Jan},
+  title     = {Pseudoinverse-Guided Diffusion Models for Inverse Problems},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  url       = {https://openreview.net/forum?id=9_gsMA8MRKQ}
+}
+
+@inproceedings{wang2023ddnm,
+  author    = {Wang, Yinhuai and Yu, Jiwen and Zhang, Jian},
+  title     = {Zero-Shot Image Restoration Using Denoising Diffusion Null-Space Model},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  eprint    = {2212.00490},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{zhu2023diffpir,
+  author    = {Zhu, Yuanzhi and Zhang, Kai and Liang, Jingyun and Cao, Jiezhang and Wen, Bihan and Timofte, Radu and Van Gool, Luc},
+  title     = {Denoising Diffusion Models for Plug-and-Play Image Restoration},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)},
+  year      = {2023},
+  eprint    = {2305.08995},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{mardani2024reddiff,
+  author    = {Mardani, Morteza and Song, Jiaming and Kautz, Jan and Vahdat, Arash},
+  title     = {A Variational Perspective on Solving Inverse Problems with Diffusion Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  eprint    = {2305.04391},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{rozet2023sda,
+  author    = {Rozet, Fran{\c{c}}ois and Louppe, Gilles},
+  title     = {Score-based Data Assimilation},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {36},
+  year      = {2023},
+  eprint    = {2306.10574},
+  archivePrefix = {arXiv}
+}
+
+@misc{daras2024survey,
+  author    = {Daras, Giannis and Chung, Hyungjin and Lai, Chieh-Hsin and Mitsufuji, Yuki and Ye, Jong Chul and Milanfar, Peyman and Dimakis, Alexandros G. and Delbracio, Mauricio},
+  title     = {A Survey on Diffusion Models for Inverse Problems},
+  year      = {2024},
+  eprint    = {2410.00083},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Spheres / manifolds ----------------
+@inproceedings{cohen2018spherical,
+  author    = {Cohen, Taco S. and Geiger, Mario and K{\"o}hler, Jonas and Welling, Max},
+  title     = {Spherical {CNNs}},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2018},
+  eprint    = {1801.10130},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{bonev2023sfno,
+  author    = {Bonev, Boris and Kurth, Thorsten and Hundt, Christian and Pathak, Jaideep and Baust, Maximilian and Kashinath, Karthik and Anandkumar, Anima},
+  title     = {Spherical {Fourier} Neural Operators: Learning Stable Dynamics on the Sphere},
+  booktitle = {Proceedings of the 40th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {202},
+  year      = {2023},
+  eprint    = {2306.03838},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{debortoli2022riemannian,
+  author    = {De Bortoli, Valentin and Mathieu, Emile and Hutchinson, Michael and Thornton, James and Teh, Yee Whye and Doucet, Arnaud},
+  title     = {Riemannian Score-Based Generative Modelling},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2202.02763},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{huang2022riemannian,
+  author    = {Huang, Chin-Wei and Aghajohari, Milad and Bose, Avishek Joey and Panangaden, Prakash and Courville, Aaron},
+  title     = {Riemannian Diffusion Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2208.07949},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{elhag2024mdf,
+  author    = {Elhag, Ahmed A. and Wang, Yuyang and Susskind, Joshua M. and Bautista, Miguel Angel},
+  title     = {Manifold Diffusion Fields},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  eprint    = {2305.15586},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- Spatiotemporal / sequence / geoscience exemplars ----------------
+@inproceedings{ho2022video,
+  author    = {Ho, Jonathan and Salimans, Tim and Gritsenko, Alexey and Chan, William and Norouzi, Mohammad and Fleet, David J.},
+  title     = {Video Diffusion Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022},
+  eprint    = {2204.03458},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{tashiro2021csdi,
+  author    = {Tashiro, Yusuke and Song, Jiaming and Song, Yang and Ermon, Stefano},
+  title     = {{CSDI}: Conditional Score-based Diffusion Models for Probabilistic Time Series Imputation},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {34},
+  year      = {2021},
+  eprint    = {2107.03502},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{ruhlingcachay2023dyffusion,
+  author    = {R{\"u}hling Cachay, Salva and Zhao, Bo and Joren, Hailey and Yu, Rose},
+  title     = {{DYffusion}: A Dynamics-informed Diffusion Model for Spatiotemporal Forecasting},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {36},
+  year      = {2023},
+  eprint    = {2306.01984},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{lippe2023pderefiner,
+  author    = {Lippe, Phillip and Veeling, Bastiaan S. and Perdikaris, Paris and Turner, Richard E. and Brandstetter, Johannes},
+  title     = {{PDE-Refiner}: Achieving Accurate Long Rollouts with Neural {PDE} Solvers},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {36},
+  year      = {2023},
+  eprint    = {2308.05732},
+  archivePrefix = {arXiv}
+}
+
+@article{price2025gencast,
+  author  = {Price, Ilan and Sanchez-Gonzalez, Alvaro and Alet, Ferran and Andersson, Tom R. and El-Kadi, Andrew and Masters, Dominic and Ewalds, Timo and Stott, Jacklynn and Mohamed, Shakir and Battaglia, Peter and Lam, Remi and Willson, Matthew},
+  title   = {Probabilistic Weather Forecasting with Machine Learning},
+  journal = {Nature},
+  volume  = {637},
+  number  = {8044},
+  pages   = {84--90},
+  year    = {2025},
+  doi     = {10.1038/s41586-024-08252-9},
+  eprint  = {2312.15796},
+  archivePrefix = {arXiv}
+}
+
+@article{mardani2025corrdiff,
+  author  = {Mardani, Morteza and Brenowitz, Noah and Cohen, Yair and Pathak, Jaideep and Chen, Chieh-Yu and Liu, Cheng-Chin and Vahdat, Arash and Nabian, Mohammad Amin and Ge, Tao and Subramaniam, Akshay and Kashinath, Karthik and Kautz, Jan and Pritchard, Mike},
+  title   = {Residual Corrective Diffusion Modeling for Km-scale Atmospheric Downscaling},
+  journal = {Communications Earth \& Environment},
+  volume  = {6},
+  number  = {1},
+  pages   = {124},
+  year    = {2025},
+  doi     = {10.1038/s43247-025-02042-5},
+  eprint  = {2309.15214},
+  archivePrefix = {arXiv}
+}
+
+@article{li2024seeds,
+  author  = {Li, Lizao and Carver, Rob and Lopez-Gomez, Ignacio and Sha, Fei and Anderson, John},
+  title   = {Generative Emulation of Weather Forecast Ensembles with Diffusion Models},
+  journal = {Science Advances},
+  volume  = {10},
+  number  = {13},
+  pages   = {eadk4489},
+  year    = {2024},
+  doi     = {10.1126/sciadv.adk4489},
+  eprint  = {2306.14066},
+  archivePrefix = {arXiv}
+}
+
+% ---------------- UQ, calibration, metrics ----------------
+@misc{horwitz2022conffusion,
+  author    = {Horwitz, Eliahu and Hoshen, Yedid},
+  title     = {Conffusion: Confidence Intervals for Diffusion Models},
+  year      = {2022},
+  eprint    = {2211.09795},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{kou2024bayesdiff,
+  author    = {Kou, Siqi and Gan, Lei and Wang, Dequan and Li, Chongxuan and Deng, Zhijie},
+  title     = {{BayesDiff}: Estimating Pixel-wise Uncertainty in Diffusion via {Bayesian} Inference},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  eprint    = {2310.11142},
+  archivePrefix = {arXiv}
+}
+
+@article{gneiting2007scoring,
+  author  = {Gneiting, Tilmann and Raftery, Adrian E.},
+  title   = {Strictly Proper Scoring Rules, Prediction, and Estimation},
+  journal = {Journal of the American Statistical Association},
+  volume  = {102},
+  number  = {477},
+  pages   = {359--378},
+  year    = {2007},
+  doi     = {10.1198/016214506000001437}
+}
+
+@article{hersbach2000crps,
+  author  = {Hersbach, Hans},
+  title   = {Decomposition of the Continuous Ranked Probability Score for Ensemble Prediction Systems},
+  journal = {Weather and Forecasting},
+  volume  = {15},
+  number  = {5},
+  pages   = {559--570},
+  year    = {2000},
+  doi     = {10.1175/1520-0434(2000)015<0559:DOTCRP>2.0.CO;2}
+}
+
+@article{fortin2014spread,
+  author  = {Fortin, V. and Abaza, M. and Anctil, F. and Turcotte, R.},
+  title   = {Why Should Ensemble Spread Match the {RMSE} of the Ensemble Mean?},
+  journal = {Journal of Hydrometeorology},
+  volume  = {15},
+  number  = {4},
+  pages   = {1708--1713},
+  year    = {2014},
+  doi     = {10.1175/JHM-D-14-0008.1}
+}
+
+% ---------------- Surveys ----------------
+@article{yang2023survey,
+  author  = {Yang, Ling and Zhang, Zhilong and Song, Yang and Hong, Shenda and Xu, Runsheng and Zhao, Yue and Zhang, Wentao and Cui, Bin and Yang, Ming-Hsuan},
+  title   = {Diffusion Models: A Comprehensive Survey of Methods and Applications},
+  journal = {ACM Computing Surveys},
+  volume  = {56},
+  number  = {4},
+  pages   = {1--39},
+  year    = {2023},
+  doi     = {10.1145/3626235},
+  eprint  = {2209.00796},
+  archivePrefix = {arXiv}
+}
+
+@article{croitoru2023survey,
+  author  = {Croitoru, Florinel-Alin and Hondru, Vlad and Ionescu, Radu Tudor and Shah, Mubarak},
+  title   = {Diffusion Models in Vision: A Survey},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume  = {45},
+  number  = {9},
+  pages   = {10850--10869},
+  year    = {2023},
+  doi     = {10.1109/TPAMI.2023.3261988},
+  eprint  = {2209.04747},
+  archivePrefix = {arXiv}
+}
