@@ -8,3 +8,22 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Literature (PDFs, not redistributed)
+literature/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+survey/build/
+
+# Data and run outputs (not tracked)
+data/
+runs/
