@@ -94,6 +94,15 @@ def build_twin(raw: Path, out: Path, threshold_mm: float = 1000.0) -> None:
     np.savez(out / "twin.npz", months=np.array(months), coeffs=coeffs.astype(np.float32))
 
 
+def build_landmask(raw: Path, out: Path) -> None:
+    """Land mask on WaterGAP's 0.5° cell-centred grid (cells with any valid value)."""
+    import xarray as xr
+
+    ds = xr.open_dataset(raw / TWIN_FILE)
+    valid = np.isfinite(ds["tws"].isel(time=0).values)
+    np.savez(out / "landmask.npz", land=valid, lat=ds["lat"].values, lon=ds["lon"].values)
+
+
 def load(proc: Path, name: str) -> tuple[list[str], np.ndarray]:
     d = np.load(Path(proc) / f"{name}.npz")
     return [str(m) for m in d["months"]], d["coeffs"]
@@ -104,8 +113,10 @@ if __name__ == "__main__":
 
     raw, out = Path(sys.argv[1]), Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
-    which = sys.argv[3:] or ["grace", "twin"]
+    which = sys.argv[3:] or ["grace", "twin", "land"]
     if "grace" in which:
         build_grace(raw, out)
+    if "land" in which:
+        build_landmask(raw, out)
     if "twin" in which:
         build_twin(raw, out)

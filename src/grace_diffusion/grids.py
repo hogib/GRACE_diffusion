@@ -90,3 +90,18 @@ def region_mask(L: int, rot: Rotation | None, box: Box = TEST_BOX) -> np.ndarray
     """1 inside the box (no margin), for scoring."""
     glat, glon = rotated_coords(L, rot)
     return box.contains(glat, glon).astype(np.float32)
+
+
+_LAND = {}
+
+
+def land_mask(L: int, rot: Rotation | None, proc: str = "data/proc") -> np.ndarray:
+    """1 on land (WaterGAP cells), 0 elsewhere, at the rung grid of a field rotated by rot."""
+    if proc not in _LAND:
+        d = np.load(f"{proc}/landmask.npz")
+        _LAND[proc] = d["land"]
+    land = _LAND[proc]
+    glat, glon = rotated_coords(L, rot)
+    i = np.clip(np.round((89.75 - glat) / 0.5).astype(int), 0, land.shape[0] - 1)
+    j = np.round((((glon + 180.0) % 360.0) - 0.25) / 0.5).astype(int) % land.shape[1]
+    return land[i, j].astype(np.float32)
