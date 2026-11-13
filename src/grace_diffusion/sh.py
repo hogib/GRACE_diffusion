@@ -55,6 +55,96 @@ def load_series(raw: str | Path, names=("itsg2018", "itsg_operational"), lmax: i
     return Series(months, coeffs, [by_month[m][0] for m in months])
 
 
+# ----------------------------------------------------------------------------- C20/C30, GIA
+
+def decimal_year(month: str) -> float:
+    """Mid-month as a decimal year, e.g. '2010-04' -> 2010.2917."""
+    y, m = int(month[:4]), int(month[5:7])
+    return y + (m - 0.5) / 12.0
+
+
+def read_tn14(path: str | Path) -> dict[str, tuple[float, float]]:
+    """GSFC TN-14 SLR C20 and C30 per calendar month (zero tide, absolute values).
+
+    Rows follow JPL solution spans, which need not align with calendar months (e.g.
+    16 Dec 2011 – 15 Jan 2012). Each calendar month takes the row whose span overlaps
+    it by the most days. C30 is NaN where TN-14 gives none.
+    """
+    from datetime import date, timedelta
+
+    epoch = date(1858, 11, 17)
+    rows = []
+    started = False
+    for line in Path(path).read_text().splitlines():
+        if line.startswith("Product:"):
+            started = True
+            continue
+        if not started or not line.strip():
+            continue
+        f = line.split()
+        c30 = float(f[5]) if f[5].lower() != "nan" else np.nan
+        rows.append((epoch + timedelta(days=float(f[0])), epoch + timedelta(days=float(f[8])),
+                     float(f[2]), c30))
+    out: dict[str, tuple[float, float]] = {}
+    if not rows:
+        return out
+    y, m = rows[0][0].year, rows[0][0].month
+    last = rows[-1][1]
+    while date(y, m, 1) <= last:
+        m0 = date(y, m, 1)
+        m1 = date(y + (m == 12), m % 12 + 1, 1)
+        best, best_days = None, 0
+        for a, b, c20, c30 in rows:
+            days = (min(b, m1) - max(a, m0)).days
+            if days > best_days:
+                best, best_days = (c20, c30), days
+        if best is not None:
+            out[f"{y:04d}-{m:02d}"] = best
+        y, m = y + (m == 12), m % 12 + 1
+    return out
+
+
+def replace_low_degrees(s: "Series", tn14: dict[str, tuple[float, float]]) -> list[str]:
+    """Replace C20 (and C30 where given) in place with TN-14 values. Returns months without a value."""
+    missing = []
+    for i, m in enumerate(s.months):
+        if m not in tn14:
+            missing.append(m)
+            continue
+        c20, c30 = tn14[m]
+        s.coeffs[i, 0, 2, 0] = c20
+        if np.isfinite(c30):
+            s.coeffs[i, 0, 3, 0] = c30
+    return missing
+
+
+def read_gia_rates(path: str | Path, lmax: int) -> np.ndarray:
+    """GIA Stokes-coefficient rates (per year) as a (2, lmax+1, lmax+1) array.
+
+    Format of the JPL VESL files (e.g. exp_Stokes_Caron_et_al_2018): lines 'l m rate',
+    negative m = sine coefficient, '%' comments. Degrees beyond the file are zero.
+    """
+    out = np.zeros((2, lmax + 1, lmax + 1))
+    for line in Path(path).read_text().splitlines():
+        if line.startswith("%") or not line.strip():
+            continue
+        l, m, r = line.split()[:3]
+        l, m = int(l), int(m)
+        if l <= lmax:
+            out[1 if m < 0 else 0, l, abs(m)] = float(r)
+    return out
+
+
+def remove_gia(s: "Series", rates: np.ndarray, t0: float = 2007.0) -> None:
+    """Subtract the GIA signal rate * (t - t0) from every month, in place.
+
+    The choice of t0 does not matter once anomalies are taken (it only shifts the mean).
+    """
+    k = min(rates.shape[-1], s.coeffs.shape[-1])
+    for i, m in enumerate(s.months):
+        s.coeffs[i, :, :k, :k] -= rates[:, :k, :k] * (decimal_year(m) - t0)
+
+
 # ----------------------------------------------------------------------------- anomalies, EWH
 
 def anomalies(s: Series, ref: tuple[str, str] = ("2004", "2009")) -> np.ndarray:

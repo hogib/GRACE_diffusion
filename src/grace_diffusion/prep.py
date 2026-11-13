@@ -7,7 +7,10 @@ Outputs in data/proc/:
 Each holds `months` ('YYYY-MM' strings) and `coeffs` (n, 2, L+1, L+1, float32),
 anomalies relative to the 2004–2009 mean, degrees 0 and 1 set to zero.
 
-Not yet applied (design doc §10): SLR C20 replacement and GIA correction.
+GRACE corrections applied before anomalies (design doc §4): C20, and C30 where
+given, replaced by GSFC TN-14 SLR values; GIA removed with the Caron et al. (2018)
+expectation model (JPL VESL). Degree 1 (geocentre) is not observed and stays zero.
+The twin needs neither correction.
 """
 from __future__ import annotations
 
@@ -23,8 +26,16 @@ TWIN_LMAX = 128
 TWIN_FILE = "watergap/watergap22e_gswp3-w5e5_tws_histsoc_monthly_1901_2019.nc"
 
 
+TN14_FILE = "aux/TN-14_C30_C20_GSFC_SLR.txt"
+GIA_FILE = "aux/exp_Stokes_Caron_et_al_2018"
+
+
 def build_grace(raw: Path, out: Path) -> None:
     s = sh.load_series(raw)
+    missing = sh.replace_low_degrees(s, sh.read_tn14(raw / TN14_FILE))
+    if missing:
+        print(f"no TN-14 C20 for {len(missing)} months (GRACE value kept): {', '.join(missing)}")
+    sh.remove_gia(s, sh.read_gia_rates(raw / GIA_FILE, s.lmax))
     anom = sh.to_ewh(sh.anomalies(s))
     ddk5 = sh.DDKFilter.named("DDK5", raw / "ddk")
     filt = np.array([ddk5(a) for a in anom])

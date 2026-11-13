@@ -127,9 +127,19 @@ discretisation is reported as a metric.
 ITSG-Grace_operational (Jun 2018 – Sep 2026, 98 months): unconstrained
 monthly solutions to degree 120 with formal errors. Anomalies are taken
 relative to the 2004–2009 mean and converted to equivalent water height with
-PREM load Love numbers. Degrees 0 and 1 are dropped (not observed). C20 is
-left as estimated for now. SLR replacement and GIA removal are to add (§10);
-they change trends and low degrees and are stated with every result.
+PREM load Love numbers. Degrees 0 and 1 are dropped (not observed).
+Corrections (2026-11-13, provisional sources like the rest):
+- C20, and C30 where given, replaced by GSFC TN-14 SLR values (version of
+  3 Nov 2026, zero tide like ITSG). TN-14 rows follow JPL solution spans,
+  so each calendar month takes the row overlapping it most; all 260 months
+  are matched.
+- GIA removed with the Caron et al. (2018) expectation model (JPL VESL,
+  Stokes rates to degree 89; covariances also available). ICE-6G_D, the
+  more common choice, was unreachable.
+Check (Gaussian 300 km EWH trends, mm/yr, raw → corrected): Hudson Bay
++31.2 → −0.6, Scandinavia +21.8 → +0.1, West Antarctica −112.7 → −124.3,
+NW India −23.6 → −25.4, Amazon +3.7 → +4.2, Türkiye −2.1 → −1.5. Degree 1
+(geocentre, TN-13) is not yet added.
 
 **Two GRACE targets.** The gate runs on:
 - *unfiltered*: R3 band (16–32) signal/noise ~11.5;
@@ -279,8 +289,8 @@ shxarray (DDK reader), matplotlib.
   stripe orientation and latitude structure, less augmentation), or full
   rotations on the DDK5 target only.
 - **Projection at every sampling step** or only on the final sample.
-- **SLR C20 and GIA:** add TN-14-style C20 replacement and a GIA model before
-  experiment A, or only before D.
+- **Degree 1 (geocentre):** add a TN-13-style estimate, or leave degree 1 out
+  of all rungs (it only affects the largest scales of R1).
 - **Ensemble size** for scoring and the number of sampler steps.
 - **Data volume:** about 180 training months with rotation augmentation.
   Whether the rotated copies of the same month are diverse enough is unknown

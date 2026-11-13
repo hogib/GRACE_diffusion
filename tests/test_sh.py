@@ -125,3 +125,38 @@ def test_love_numbers_and_ewh_factor():
     assert np.isclose(k[2], -0.3025, atol=1e-3)
     f = sh.ewh_factor(120)
     assert f[2] > 0 and np.all(np.diff(f[2:]) > 0)
+
+
+# ---------------------------------------------------------------- C20 / GIA
+
+def test_read_tn14_assigns_by_largest_overlap(tmp_path):
+    p = tmp_path / "tn14.txt"
+    p.write_text("header\nProduct:\n"
+                 "55197.0 2010.0000  -4.84E-04  0.1 0.1  NaN NaN NaN 55227.0 2010.08\n"       # 1-31 Jan 2010
+                 "55228.0 2010.0849  -4.85E-04  0.1 0.1  9.57E-07 0.1 0.1 55255.0 2010.16\n"  # Feb 2010
+                 # 16 Dec 2011 - 15 Jan 2012 (JPL's Dec 2011), then 1-31 Jan 2012
+                 "55911.0 2011.9589  -4.86E-04  0.1 0.1  NaN NaN NaN 55941.0 2012.04\n"
+                 "55927.0 2012.0000  -4.87E-04  0.1 0.1  NaN NaN NaN 55958.0 2012.08\n")
+    t = sh.read_tn14(p)
+    assert np.isclose(t["2010-01"][0], -4.84e-4) and np.isnan(t["2010-01"][1])
+    assert np.isclose(t["2010-02"][1], 9.57e-7)
+    assert np.isclose(t["2011-12"][0], -4.86e-4)      # straddling span fills December
+    assert np.isclose(t["2012-01"][0], -4.87e-4)      # January keeps its own row
+    assert "2011-06" not in t                          # months with no overlap stay absent
+
+
+def test_replace_low_degrees_and_gia(tmp_path):
+    months = ["2010-01", "2010-02", "2011-01"]
+    s = sh.Series(months, np.zeros((3, 2, 6, 6)), ["x"] * 3)
+    missing = sh.replace_low_degrees(s, {"2010-01": (-1.0, np.nan), "2010-02": (-2.0, 3.0)})
+    assert missing == ["2011-01"]
+    assert s.coeffs[0, 0, 2, 0] == -1.0 and s.coeffs[0, 0, 3, 0] == 0.0
+    assert s.coeffs[1, 0, 3, 0] == 3.0
+    g = tmp_path / "gia.txt"
+    g.write_text("% comment\n  2 -1 +2.0e-11\n  2 0 +1.0e-11\n  9 9 +5.0e-12\n")
+    rates = sh.read_gia_rates(g, 5)
+    assert rates[1, 2, 1] == 2e-11 and rates[0, 2, 0] == 1e-11 and rates.shape == (2, 6, 6)
+    before = s.coeffs.copy()
+    sh.remove_gia(s, rates, t0=2010.0)
+    dt = np.array([sh.decimal_year(m) - 2010.0 for m in months])
+    np.testing.assert_allclose(s.coeffs[:, 1, 2, 1], before[:, 1, 2, 1] - 2e-11 * dt)
