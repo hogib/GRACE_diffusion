@@ -2,8 +2,11 @@
 # Phase 1 (design doc §7): train the four models in parallel, then score experiments A, B, C.
 #
 # Run from anywhere on the GPU server, detached:
-#   nohup setsid bash scripts/phase1.sh > runs/phase1.log 2>&1 &
+#   nohup setsid bash scripts/phase1.sh [STAGE] > runs/phase1.log 2>&1 &
+# STAGE: all (default) | oracle (oracle + scoring) | eval (scoring only).
 # Overrides: STEPS (default 40000), WORKERS per run (default 5), MEMBERS (default 32).
+# The oracle trains alone after the other three: its 128x256 grids do not fit
+# on a 32 GB GPU next to three R1+R2 runs.
 #
 # Training runs:
 #   diffusion-ddk5-r12   diffusion, GRACE DDK5, rungs R1+R2 (4->8, 8->16)   the gate model
@@ -17,11 +20,12 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+STAGE=${1:-all}
 STEPS=${STEPS:-40000}
 WORKERS=${WORKERS:-5}
 MEMBERS=${MEMBERS:-32}
 
-echo "=== $(date -Is) phase1 start, commit $(git rev-parse --short HEAD), steps $STEPS"
+echo "=== $(date -Is) phase1 $STAGE start, commit $(git rev-parse --short HEAD), steps $STEPS"
 nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
 
 train() {
@@ -30,14 +34,19 @@ train() {
     echo "--- $(date -Is) train $name $*"
     uv run python -m grace_diffusion.train --out "runs/$name" --steps "$STEPS" \
         --workers "$WORKERS" "$@" > "runs/$name/stdout.log" 2>&1
-    echo "--- $(date -Is) done $name (exit $?)"
+    local rc=$?
+    echo "--- $(date -Is) done $name (exit $rc)"
 }
 
-train diffusion-ddk5-r12 --dataset grace_ddk5 --kind grace --rungs 8,16 --model diffusion &
-train regress-ddk5-r12   --dataset grace_ddk5 --kind grace --rungs 8,16 --model regress &
-train oracle-ddk5-r3     --dataset grace_ddk5 --kind grace --rungs 32   --model diffusion &
-train diffusion-twin-r12 --dataset twin       --kind twin  --rungs 8,16 --model diffusion &
-wait
+if [ "$STAGE" = all ]; then
+    train diffusion-ddk5-r12 --dataset grace_ddk5 --kind grace --rungs 8,16 --model diffusion &
+    train regress-ddk5-r12   --dataset grace_ddk5 --kind grace --rungs 8,16 --model regress &
+    train diffusion-twin-r12 --dataset twin       --kind twin  --rungs 8,16 --model diffusion &
+    wait
+fi
+if [ "$STAGE" = all ] || [ "$STAGE" = oracle ]; then
+    train oracle-ddk5-r3 --dataset grace_ddk5 --kind grace --rungs 32 --model diffusion
+fi
 
 mkdir -p runs/eval
 ev() {
