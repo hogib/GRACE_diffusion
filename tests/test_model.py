@@ -53,3 +53,13 @@ def test_regressor_shapes():
     cond = torch.randn(2, 1, 64, 128)
     assert r(cond).shape == cond.shape
     r.loss(torch.randn_like(cond), cond, torch.ones_like(cond)).backward()
+
+
+def test_noise_schedules():
+    from grace_diffusion.model.edm import EDM
+    net = UNet(base=8, mults=(1, 2), blocks=1)
+    s = EDM(net, noise="loguniform", sigma_max=20.0).draw_sigma(20000, "cpu")
+    assert s.min() >= 0.002 and s.max() <= 20.0
+    assert abs(float((s > 1.0).float().mean()) - np.log(20) / np.log(1e4)) < 0.02
+    s = EDM(net, p_mean=-0.4, p_std=1.6).draw_sigma(20000, "cpu")
+    assert abs(float(s.log().mean()) + 0.4) < 0.05

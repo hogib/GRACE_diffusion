@@ -14,10 +14,16 @@ from .unet import UNet
 
 
 class EDM(nn.Module):
-    def __init__(self, net: UNet, sigma_data: float = 1.0):
+    def __init__(self, net: UNet, sigma_data: float = 1.0, p_mean: float = -1.2,
+                 p_std: float = 1.2, noise: str = "lognormal", sigma_min: float = 0.002,
+                 sigma_max: float = 80.0):
+        """noise: 'lognormal' draws ln(sigma) ~ N(p_mean, p_std^2) in training (EDM);
+        'loguniform' draws ln(sigma) uniformly over [sigma_min, sigma_max]."""
         super().__init__()
         self.net = net
         self.sigma_data = sigma_data
+        self.p_mean, self.p_std, self.noise = p_mean, p_std, noise
+        self.sigma_min, self.sigma_max = sigma_min, sigma_max
 
     def denoise(self, x_noisy: torch.Tensor, sigma: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         sd = self.sigma_data
@@ -29,10 +35,15 @@ class EDM(nn.Module):
         F_x = self.net(torch.cat([c_in * x_noisy, cond], dim=1), c_noise)
         return c_skip * x_noisy + c_out * F_x
 
-    def loss(self, detail: torch.Tensor, cond: torch.Tensor, weight: torch.Tensor,
-             P_mean: float = -1.2, P_std: float = 1.2) -> torch.Tensor:
+    def draw_sigma(self, n: int, device) -> torch.Tensor:
+        if self.noise == "loguniform":
+            lo, hi = np.log(self.sigma_min), np.log(self.sigma_max)
+            return torch.exp(lo + (hi - lo) * torch.rand(n, device=device))
+        return torch.exp(torch.randn(n, device=device) * self.p_std + self.p_mean)
+
+    def loss(self, detail: torch.Tensor, cond: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         """EDM loss, weighted per pixel by area x loss mask, normalised by the weight sum."""
-        sigma = torch.exp(torch.randn(detail.shape[0], device=detail.device) * P_std + P_mean)
+        sigma = self.draw_sigma(detail.shape[0], detail.device)
         s = sigma.view(-1, 1, 1, 1)
         lam = (s ** 2 + self.sigma_data ** 2) / (s * self.sigma_data) ** 2
         noisy = detail + torch.randn_like(detail) * s
@@ -40,10 +51,12 @@ class EDM(nn.Module):
         return (lam * weight * (D - detail) ** 2).sum() / weight.sum()
 
     @torch.no_grad()
-    def sample(self, cond: torch.Tensor, steps: int = 32, sigma_min: float = 0.002,
-               sigma_max: float = 80.0, rho: float = 7.0,
+    def sample(self, cond: torch.Tensor, steps: int = 32, sigma_min: float | None = None,
+               sigma_max: float | None = None, rho: float = 7.0,
                generator: torch.Generator | None = None) -> torch.Tensor:
         """Deterministic Heun sampler (EDM Algorithm 1) from Gaussian noise."""
+        sigma_min = self.sigma_min if sigma_min is None else sigma_min
+        sigma_max = self.sigma_max if sigma_max is None else sigma_max
         dev = cond.device
         i = torch.arange(steps, device=dev, dtype=torch.float64)
         t = (sigma_max ** (1 / rho) + i / (steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho

@@ -58,7 +58,9 @@ def build(cfg: dict) -> torch.nn.Module:
     net = UNet(in_ch=2, out_ch=1, base=cfg["base"], mults=tuple(cfg["mults"]),
                blocks=cfg["blocks"], dropout=cfg["dropout"])
     if cfg["model"] == "diffusion":
-        return EDM(net, sigma_data=cfg["sigma_data"])
+        return EDM(net, sigma_data=cfg["sigma_data"], p_mean=cfg.get("p_mean", -1.2),
+                   p_std=cfg.get("p_std", 1.2), noise=cfg.get("noise", "lognormal"),
+                   sigma_max=cfg.get("sigma_max", 80.0))
     return Regressor(net)
 
 
@@ -98,6 +100,11 @@ def main(argv=None):
     p.add_argument("--dropout", type=float, default=0.0)
     p.add_argument("--ema", type=float, default=0.999)
     p.add_argument("--rotate", default="random", choices=["random", "polar", "none"])
+    p.add_argument("--noise", default="lognormal", choices=["lognormal", "loguniform"],
+                   help="training noise-level distribution (diffusion only)")
+    p.add_argument("--p-mean", type=float, default=-1.2)
+    p.add_argument("--p-std", type=float, default=1.2)
+    p.add_argument("--sigma-max", type=float, default=80.0, help="sampler start; loguniform upper end")
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--val-every", type=int, default=2000)
@@ -115,7 +122,8 @@ def main(argv=None):
     val_s = data.Sampler(months, coeffs, a.kind, "val", rungs=rungs, rotate="none")
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
                blocks=a.blocks, dropout=a.dropout, rungs=list(rungs), dataset=a.dataset,
-               kind=a.kind, rotate=a.rotate, seed=a.seed, steps=a.steps, batch=a.batch, lr=a.lr,
+               kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean, p_std=a.p_std,
+               sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch, lr=a.lr,
                sigma_data=estimate_sigma_data(train_s))
     model = build(cfg).to(dev)
     cfg["params"] = count_params(model)
