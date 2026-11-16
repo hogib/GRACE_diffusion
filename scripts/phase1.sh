@@ -66,6 +66,7 @@ for ds in grace_ddk5 grace_raw; do
 done
 ev twin twin val 16,32,64 --members "$MEMBERS" --baselines --ckpt diffusion=$T \
     --out runs/eval/C_twin.csv
-ev twin twin val 128 --members 16 --baselines --ckpt diffusion=$T --out runs/eval/C_twin_r5.csv
+ev twin twin val 128 --members 16 --chunk 4 --baselines --ckpt diffusion=$T \
+    --out runs/eval/C_twin_r5.csv
 
 echo "=== $(date -Is) phase1 done"

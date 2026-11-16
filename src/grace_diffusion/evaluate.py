@@ -157,6 +157,7 @@ def main(argv=None):
     p.add_argument("--region", default="val_land")
     p.add_argument("--rotate", default="none", choices=["none", "test_box"])
     p.add_argument("--steps", type=int, default=32)
+    p.add_argument("--chunk", type=int, default=32, help="members sampled per GPU batch")
     a = p.parse_args(argv)
     rungs = tuple(int(x) for x in a.rungs.split(","))
     months, coeffs = prep.load(Path("data/proc"), a.dataset)
@@ -165,7 +166,7 @@ def main(argv=None):
         methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"), max(rungs)))
     for spec in a.ckpt:
         name, path = spec.split("=", 1)
-        methods[name] = model_method(path, steps=a.steps)
+        methods[name] = model_method(path, steps=a.steps, chunk=a.chunk)
     rows = run(methods, a.dataset, a.kind, a.split, rungs, a.members, a.region, Path(a.out),
                rotate=a.rotate)
     print(summarise(rows))
