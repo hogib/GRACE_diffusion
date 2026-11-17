@@ -48,9 +48,10 @@ At its training scale the final model is the best of all methods tested (CRPS 20
 up it loses to the spectral Gaussian baseline (52.5 vs 48.7\,mm) and is over-confident, while
 a model trained directly on that octave reaches 24.8\,mm. The gate is not passed. A first model
 appeared to pass part of the gate, but a diagnostic showed it had barely learned to use its
-input; its small advantage came from being close to generic noise. A closed-loop experiment
-on a hydrological-model twin, which separates the physics from GRACE-specific noise, is
-running at the time of writing (Section~\ref{sec:pending}).
+input; its small advantage came from being close to generic noise. The same experiment on a
+hydrological-model twin, which has no GRACE noise and no filter, gives the same result: strong
+where trained (7.2 vs 16.1\,mm), a tie one octave up (14.5 vs 14.4\,mm) and a loss two octaves
+up, with over-confident ensembles. The failure is therefore not specific to GRACE data.
 \end{abstract}
 
 \section{Aim}
@@ -350,7 +351,8 @@ diffusion ensemble's mean should approach the regression answer, so this pointed
 at R3 (71.1\,mm, worse than adding nothing).
 
 \paragraph{Experiment C (twin).} Figure~\ref{fig:twin} and Table~\ref{tab:twin}. The twin model
-leads clearly where it was trained and by a small, shrinking margin above it.
+leads clearly where it was trained and by a small, shrinking margin above it. This model had
+the Phase 1 weakness; Section~\ref{sec:p1c} repeats the experiment with the fixed schedule.
 
 \begin{table}[ht]
 \centering\small
@@ -372,8 +374,9 @@ the paired difference to \code{spectral-gauss} with its 95\% bootstrap interval.
 \begin{figure}[ht]
   \centering
   \includegraphics[width=0.55\linewidth]{figures/twin_rungs.pdf}
-  \caption{Twin, CRPS by rung for the Phase 1 twin model (trained on R1+R2, shaded) and the
-  baselines. The model's lead shrinks quickly above the training rungs.}
+  \caption{Twin, CRPS by rung for the twin models trained on R1+R2 (shaded) and the baselines.
+  The properly trained Phase 1c model (green) is far ahead where trained and no better than
+  \code{spectral-gauss} above it.}
   \label{fig:twin}
 \end{figure}
 
@@ -447,6 +450,39 @@ over-confident (spread/error 0.37 and 0.49; \code{wide} covers 21\% and 50\% whe
   \label{fig:diag}
 \end{figure}
 
+\subsection{Phase 1c: the twin, properly trained}\label{sec:p1c}
+The Phase 1 twin model had the same weakness as the Phase 1 GRACE model, so its modest
+transfer (Table~\ref{tab:twin}) could not be taken at face value. Phase 1c retrains the twin
+model with the \code{wide} schedule (60\,000 steps) and scores it at R2, R3 and R4. The twin
+has no GRACE noise and no filter, so this run separates the physics from GRACE-specific effects.
+
+\begin{table}[ht]
+\centering\small\setlength{\tabcolsep}{4pt}
+\caption{Phase 1c, twin, \code{wide} model trained on R1+R2. CRPS and RMSE in mm. Last column:
+paired CRPS difference to \code{spectral-gauss}, 95\% bootstrap interval.}
+\label{tab:p1c}
+\begin{tabular}{lrrrrrcc}
+  \toprule
+  rung & CRPS & s.-gauss & RMSE (s.-gauss) & corr.\ (s.-gauss) & spread/err. & cov.\ 50/90 &
+    $-$ spectral-gauss \\
+  \midrule
+  R2 (trained) & \textbf{7.2} & 16.1 & 13.3 (31.0) & 0.92 (0.20) & 0.85 & 42/83 &
+    $-8.9\ [-9.1, -8.6]$ \\
+  R3 & 14.5 & 14.4 & 25.9 (28.3) & 0.52 (0.34) & 0.48 & 26/59 & $+0.1\ [-0.2, +0.3]$ \\
+  R4 & 15.5 & 15.0 & 29.7 (30.0) & 0.36 (0.31) & 0.43 & 28/61 & $+0.5\ [+0.4, +0.6]$ \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+The pattern is the same as on GRACE (Table~\ref{tab:p1c}, Figure~\ref{fig:twin}). Where it was
+trained, the model is far ahead (7.2 vs 16.1\,mm, ensemble-mean correlation 0.92). One octave up
+it ties with \code{spectral-gauss}, and two octaves up it loses; it is also worse than the weaker
+Phase 1 twin model at both (by 1.5 and 1.3\,mm). The ensembles are strongly over-confident
+(spread/error 0.48 and 0.43). There is one difference from GRACE: at R3 the twin model's
+ensemble mean still carries some structure (correlation 0.52 against 0.34 for
+\code{spectral-gauss}; RMSE 25.9 vs 28.3\,mm). Its spread collapses, though, and that cancels
+the gain in CRPS. By R4 the structural advantage is almost gone (0.36 vs 0.31).
+
 \section{Discussion}
 
 \begin{itemize}
@@ -463,30 +499,30 @@ over-confident (spread/error 0.37 and 0.49; \code{wide} covers 21\% and 50\% whe
   \item \textbf{R3 detail is learnable from R3 data.} The oracle (24.8\,mm, correlation 0.86)
     shows the information is there. What fails is the assumption that the mapping between
     octaves is the same at every scale.
-  \item \textbf{Physics or GRACE?} Two explanations remain. The relation between a TWS field and
-    its next octave may genuinely change with scale (river basins and climate zones are not
-    self-similar from 2500\,km to 600\,km). Or GRACE-specific effects may break transfer, since
-    noise grows and DDK5 attenuates more in degrees 16--32. The twin has neither noise nor
-    filter, so a properly trained twin model separates the two.
+  \item \textbf{Not a GRACE artefact.} On the twin, which has neither GRACE noise nor the DDK
+    filter, the properly trained model fails in the same way (Section~\ref{sec:p1c}). This points
+    to the relation between a TWS field and its next octave changing with scale (plausibly
+    because river basins and climate zones are not self-similar from 2500\,km down to
+    300\,km), at least as WaterGAP represents it. Some structure carries one
+    octave on clean data (ensemble-mean correlation 0.52 vs 0.34 at twin R3), but not enough,
+    and the models' uncertainty does not grow to match.
+  \item \textbf{The uncertainty fails first.} At every transfer rung the learned ensembles are
+    too narrow (spread/error 0.37--0.49). A model that has only seen R1/R2 is as confident at
+    R3 as at R2, although it knows much less there. Any later design must recover honest
+    spread away from the training scale.
   \item \textbf{Lessons for method.} The standard EDM noise schedule (tuned for natural images)
     was unsuitable here, and the validation loss hid it. A direct check of the denoiser against
     a regression model is cheap and should be routine.
 \end{itemize}
 
-\section{Pending: Phase 1c}\label{sec:pending}
-The twin model is being retrained with the \code{wide} schedule (60\,000 steps) and scored at R2,
-R3 and R4 (\code{scripts/phase1c\_twin.sh}, started 17 November 2026). The Phase 1 twin model
-in Table~\ref{tab:twin} had the same weakness as the Phase 1 GRACE model, so its modest transfer
-cannot be taken at face value.
-\begin{itemize}
-  \item If the properly trained twin model \emph{transfers}, the GRACE failure is likely due to
-    GRACE noise or filtering, and worth addressing (e.g.\ a different filter, or targets
-    weighted by signal-to-noise).
-  \item If it \emph{also fails}, octave transfer is not a sound basis for going below GRACE's
-    resolution, and the plan should change. The natural alternative, suggested by the oracle,
-    is to train directly on the band of interest, which for scales GRACE cannot resolve means
-    training on a hydrological model.
-\end{itemize}
+\section{Conclusion}
+Octave transfer, as tested here, is not a sound basis for sharpening GRACE below its resolution:
+skill learned at coarse scales does not carry to finer ones, on GRACE or on clean model data.
+The oracle shows that detail at a given scale is learnable from data at that scale. For scales
+GRACE cannot resolve, that points towards training on a hydrological model (or another source
+with real fine-scale content) for the band of interest, with GRACE constraining the coarse
+degrees through the consistency projection. That is a change of plan and is left for
+discussion.
 
 \section{Not yet done}
 \begin{itemize}

@@ -383,3 +383,18 @@ octave up on GRACE. The R3 oracle shows the R3 detail itself is learnable from R
 Not yet separated: whether the failure is the physics (GRACE fields not self-similar
 across these degrees) or GRACE/DDK-specific (filter attenuation and noise growing in
 16–32). The twin, retrained with the fixed schedule, separates these.
+
+**Phase 1c (2026-11-17, commit c76b8d6).** Twin, R1+R2, `wide` schedule, 60k steps.
+
+| twin | CRPS | spectral-gauss | paired diff (95%) | corr (s.-gauss) | spread/error |
+|---|---|---|---|---|---|
+| R2 (trained) | **7.2** | 16.1 | −8.9 [−9.1, −8.6] | 0.92 (0.20) | 0.85 |
+| R3 | 14.5 | 14.4 | +0.1 [−0.2, +0.3] | 0.52 (0.34) | 0.48 |
+| R4 | 15.5 | 15.0 | +0.5 [+0.4, +0.6] | 0.36 (0.31) | 0.43 |
+
+The twin fails the same way as GRACE, so the failure is not caused by GRACE noise or the
+DDK filter. Some structure carries one octave on clean data (ensemble-mean corr 0.52 vs 0.34),
+but the spread collapses and CRPS only ties. **Conclusion: octave transfer, as tested, does not
+work.** A direction change (e.g. train on a hydrological model for the band of interest, with
+GRACE fixing the coarse degrees via the consistency projection) is open for discussion with
+the user and their professor. Write-up: `reports/phase1/phase1_report.pdf`.

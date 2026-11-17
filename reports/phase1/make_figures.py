@@ -66,13 +66,16 @@ x = range(len(g.index))
 for m, col, lab in [("input", INK2, "input"), ("spectral-gauss", C2, "spectral-gauss"),
                     ("diffusion", C1, "diffusion (Phase 1)")]:
     ax.plot(x, g[m].values, color=col, marker="o", ms=4.5, mec="white", mew=1, label=lab)
+wide = pd.read_csv(EV / "C1c_twin.csv").groupby("L").crps.mean()
+ax.plot([list(g.index).index(L) for L in wide.index], wide.values, color=C3, marker="o", ms=4.5,
+        mec="white", mew=1, label="diffusion (wide, Phase 1c)")
 ax.set_xticks(list(x), [f"R{i + 2}\n{L // 2}→{L}" for i, L in enumerate(g.index)])
 ax.axvspan(-0.3, 0.3, color=GRID, alpha=0.6, lw=0, zorder=0)
 ax.set_ylabel("CRPS (mm EWH)")
 ax.set_ylim(0, 24)
 ax.set_xlim(-0.4, len(g.index) - 0.6)
 ax.text(0, 22.6, "trained", ha="center", va="center", color=INK2, fontsize=7)
-ax.legend(loc="lower right", fontsize=7.5)
+ax.legend(loc="lower right", bbox_to_anchor=(1.0, -0.02), fontsize=7, labelspacing=0.25)
 fig.tight_layout()
 fig.savefig(OUT / "twin_rungs.pdf")
 
