@@ -2,6 +2,8 @@
 # G1 (design doc 01, section 5): train on ten ISIMIP3a hydrological models at the scales GRACE
 # still resolves (8->16, 16->32), apply to land-only GRACE, score against GRACE's own detail.
 # Reference: the same network trained on land-only GRACE (the fair upper bound).
+# The two runs train one after the other: one 16->32 run fills the 32 GB GPU. A run whose
+# log already reaches STEPS is skipped, so the script can be restarted.
 #   nohup setsid bash scripts/g1_models.sh > runs/g1/g1.log 2>&1 &
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -14,6 +16,9 @@ echo "models: $MODELS"
 
 train() {
     local name=$1; shift
+    if [ "$(command tail -n 1 "runs/$name/log.csv" 2>/dev/null | cut -d, -f1)" = "$STEPS" ]; then
+        echo "--- $(date -Is) skip $name (already trained)"; return 0
+    fi
     mkdir -p "runs/$name"
     echo "--- $(date -Is) train $name $*"
     uv run python -m grace_diffusion.train --out "runs/$name" --steps "$STEPS" \
@@ -22,9 +27,8 @@ train() {
     local rc=$?
     echo "--- $(date -Is) done $name (exit $rc)"
 }
-train isimip10-r23   --dataset "$MODELS" --kind twin &
-train graceland-r23  --dataset grace_ddk5_land --kind grace &
-wait
+train graceland-r23  --dataset grace_ddk5_land --kind grace
+train isimip10-r23   --dataset "$MODELS" --kind twin
 
 M=runs/isimip10-r23/best.pt
 G=runs/graceland-r23/best.pt
