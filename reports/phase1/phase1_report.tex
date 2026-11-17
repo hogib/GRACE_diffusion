@@ -1,0 +1,512 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{iftex}
+\ifTUTeX
+  \usepackage{fontspec}
+  \setmainfont{texgyretermes}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+    ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\fi
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\emergencystretch=2em
+
+\captionsetup{font=small,labelfont=bf}
+\setlist{nosep,leftmargin=*}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcommand{\pass}{\textcolor{green!45!black}{pass}}
+\newcommand{\fail}{\textcolor{red!70!black}{fail}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{GRACE\_diffusion --- Phase 1 lab report\\[2pt]
+  \large Octave transfer of a conditional diffusion model on GRACE/GRACE-FO fields}
+\author{Working draft for discussion}
+\date{17 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We test whether a conditional diffusion model that learns to add one octave of spatial detail
+to GRACE/GRACE-FO terrestrial water storage (TWS) fields at coarse scales can do the same at a
+finer scale it never saw (the \emph{octave-transfer gate}). The model is trained on the steps
+from spherical-harmonic degree 4 to 8 and 8 to 16 and evaluated, without retraining, on 16 to 32.
+At its training scale the final model is the best of all methods tested (CRPS 20.5\,mm against
+45.9\,mm for a spectral Gaussian baseline and 26.3\,mm for a deterministic U-Net). One octave
+up it loses to the spectral Gaussian baseline (52.5 vs 48.7\,mm) and is over-confident, while
+a model trained directly on that octave reaches 24.8\,mm. The gate is not passed. A first model
+appeared to pass part of the gate, but a diagnostic showed it had barely learned to use its
+input; its small advantage came from being close to generic noise. A closed-loop experiment
+on a hydrological-model twin, which separates the physics from GRACE-specific noise, is
+running at the time of writing (Section~\ref{sec:pending}).
+\end{abstract}
+
+\section{Aim}
+
+Phase~1 asks one question before any effort goes into resolutions GRACE cannot observe:
+\emph{does skill learned at coarse scales carry over to the next finer scale?} If it does, a
+model trained where GRACE has signal could be applied below GRACE's resolution. We test this
+spatially only (single months, no time dimension) and with GRACE-only inputs.
+
+\section{Materials}
+
+\subsection{GRACE/GRACE-FO fields}
+\begin{itemize}
+  \item \textbf{Solutions.} ITSG-Grace2018 (April 2002 -- June 2017, 162 months) and
+    ITSG-Grace\_operational (June 2018 -- September 2026, 98 months): unconstrained monthly
+    Stokes coefficients to degree 120. Total 260 months.
+  \item \textbf{Low degrees.} $C_{20}$, and $C_{30}$ where available, replaced by GSFC TN-14
+    satellite laser ranging values; each calendar month takes the TN-14 row whose time span
+    overlaps it most (all 260 months matched). Degrees 0 and 1 are excluded.
+  \item \textbf{Glacial isostatic adjustment.} Removed with the Caron et~al.\ (2018)
+    expectation model (Stokes rates to degree 89, reference epoch 2007).
+  \item \textbf{Anomalies and units.} Anomalies relative to the 2004--2009 mean, converted to
+    equivalent water height (EWH, mm) with PREM load Love numbers.
+  \item \textbf{Two versions.} \emph{Unfiltered} (\code{grace\_raw}) and \emph{DDK5-filtered}
+    (\code{grace\_ddk5}), both truncated to degree 64.
+\end{itemize}
+A check of trends after a 300\,km Gaussian smoothing confirms the corrections behave as
+expected: Hudson Bay +31.2 $\to$ $-0.6$\,mm/yr and Scandinavia +21.8 $\to$ +0.1\,mm/yr after
+GIA removal; Türkiye $-2.1 \to -1.5$\,mm/yr.
+
+All sources are provisional, pending confirmation of the preferred products.
+
+\subsection{Hydrological twin}
+Monthly TWS from WaterGAP v2.2e (GSWP3-W5E5 forcing, historical human use), January
+1901 -- December 2019 (1428 months, $0.5^\circ$, land only; ocean set to zero anomaly),
+regridded to a Driscoll--Healy grid and expanded to degree 128. About 2600 cells (4\% of
+land) drifting by more than 1\,m between 1901--1910 and 2010--2019 were set to zero anomaly
+(unbounded glacier snow accumulation and point-like urban groundwater abstraction). The twin
+has clean fine-scale signal, so it can be scored at scales GRACE cannot resolve. It is used
+only for separate closed-loop experiments, never as training data for the GRACE models.
+
+\subsection{Masks}
+\begin{itemize}
+  \item \textbf{Test box} (Türkiye, 30--45$^\circ$N, 20--50$^\circ$E) plus a margin of one
+    target half-wavelength: excluded from the training loss and from validation scores.
+  \item \textbf{Ice sheets} (Greenland; Antarctica south of 60$^\circ$S): excluded from the loss
+    and from scores.
+  \item \textbf{Land mask} from the twin's land cells: scores are computed on land only.
+\end{itemize}
+
+\subsection{Splits}
+Splits are contiguous blocks of months, because neighbouring months are correlated.
+
+\begin{center}
+\begin{tabular}{lccc}
+  \toprule
+  & train & validation & test (untouched) \\
+  \midrule
+  GRACE & 2002-04 -- 2019-12 (179) & 2020-01 -- 2022-12 (36) & 2023-01 -- 2026-09 (45) \\
+  Twin  & 1901 -- 1989 (1068) & 1990 -- 2001 (144) & 2002 -- 2019 (216) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent All results in this report are on \textbf{validation} months. The test months and
+the test box have not been used.
+
+\subsection{Computing}
+Training and scoring ran on a shared workstation GPU (NVIDIA RTX 5090, 32\,GB) with PyTorch
+2.15. Spherical-harmonic operations use \code{pyshtools}; DDK filtering uses \code{shxarray}.
+Code: \url{https://github.com/hogib/GRACE_diffusion}, commits \code{3be72f3}--\code{c78433c}.
+
+\section{Methods}
+
+\subsection{The octave ladder}
+A field on the sphere is a sum of spherical-harmonic degrees $l$; degree $l$ carries detail
+with a half-wavelength of about $20\,000\,\mathrm{km}/l$. We blur a field to ``degree $L$''
+with a smooth taper rather than a hard cut, to avoid ringing:
+\begin{equation}
+  w_L(l) =
+  \begin{cases}
+    1, & l \le 0.8L,\\[2pt]
+    \tfrac12\bigl[1 + \cos\bigl(\pi\,\tfrac{l - 0.8L}{0.2L}\bigr)\bigr], & 0.8L < l < L,\\[2pt]
+    0, & l \ge L.
+  \end{cases}
+\end{equation}
+A \emph{rung} is one doubling of resolution. Its input is the field blurred to $L/2$, its
+target the field blurred to $L$, and the \emph{detail} to be generated is the difference,
+$d = w_L x - w_{L/2} x$.
+
+\begin{center}
+\begin{tabular}{llllll}
+  \toprule
+  rung & degrees & finest detail & grid (lat $\times$ lon) & data & role \\
+  \midrule
+  R1 & 4 $\to$ 8   & $\sim$2500\,km & $32\times64$   & GRACE, twin & training \\
+  R2 & 8 $\to$ 16  & $\sim$1250\,km & $64\times128$  & GRACE, twin & training \\
+  R3 & 16 $\to$ 32 & $\sim$625\,km  & $128\times256$ & GRACE, twin & \textbf{gate} \\
+  R4 & 32 $\to$ 64 & $\sim$310\,km  & $256\times512$ & twin only & transfer check \\
+  R5 & 64 $\to$ 128 & $\sim$160\,km & $512\times1024$ & twin only & transfer check \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The ladder sits one octave lower than first planned because GRACE has clean signal
+only to about degree 40.
+
+\paragraph{Same picture at every rung.} Each rung is drawn on a global equiangular
+(Driscoll--Healy) grid of $4L \times 8L$ pixels, i.e.\ four pixels per half-wavelength of the
+target degree. A feature therefore covers the same number of pixels at every rung; only the
+size of the globe in pixels changes. The network is fully convolutional, so one set of weights
+runs on every grid size. Amplitudes fall with degree, so each map is divided by the
+area-weighted RMS of its input, $s$; predictions are multiplied back by $s$.
+
+\paragraph{Rotations.} Each training sample is one month rotated by a uniformly random
+rotation of the sphere (exact in spherical harmonics), then synthesised on the grid. This
+turns 179 GRACE training months into an effectively unlimited set of images, spreads
+grid distortion and the poles over all features, and prevents the network from memorising
+geography. The masks rotate with the field. Validation scoring uses unrotated fields.
+
+\subsection{Consistency constraint}
+Blurring a generated target back to the input degree must reproduce the input. Wherever the
+input taper is non-zero, $w_{L/2}(l) > 0$, the output's degree-$l$ coefficients are replaced by
+$x^{\mathrm{in}}_l / w_{L/2}(l)$, which equals the true target's coefficients because
+$w_L(l) = 1$ there. All other degrees are free. This is a projection (applying it twice changes
+nothing, and the true target is unchanged), computed by spherical-harmonic analysis and
+synthesis and applied to every final sample of every method. The residual from discretisation
+is reported (\code{consistency}, $\sim 10^{-15}$\,mm).
+
+\subsection{Network and diffusion model}
+\begin{itemize}
+  \item \textbf{U-Net.} Two input channels (the noisy detail and the input field), one
+    output channel; base width 64, channel multipliers (1, 2, 2, 4), two residual blocks per
+    level, GroupNorm and SiLU, Fourier-feature noise embedding, no attention, 16.3\,M
+    parameters. Padding wraps around in longitude and reflects across the poles with a
+    $180^\circ$ shift, so convolutions see the sphere's true neighbours.
+  \item \textbf{Diffusion (EDM).} The model generates the normalised detail $d$ conditioned on
+    the input. The denoiser is
+    \begin{equation}
+      D(x;\sigma) = c_\mathrm{skip}(\sigma)\,x + c_\mathrm{out}(\sigma)\,
+        F\bigl(c_\mathrm{in}(\sigma)\,x,\ \mathrm{input},\ \tfrac14\ln\sigma\bigr),
+    \end{equation}
+    with $c_\mathrm{skip} = \sigma_d^2/(\sigma^2+\sigma_d^2)$,
+    $c_\mathrm{out} = \sigma\sigma_d/\sqrt{\sigma^2+\sigma_d^2}$,
+    $c_\mathrm{in} = 1/\sqrt{\sigma^2+\sigma_d^2}$, where $\sigma_d$ is the RMS of the
+    detail in the training data (0.943 for GRACE, 1.204 for the twin).
+  \item \textbf{Loss.} Per pixel,
+    $\lambda(\sigma)\,\omega\,\lVert D(d + \sigma n;\sigma) - d\rVert^2$ with
+    $\lambda(\sigma) = (\sigma^2+\sigma_d^2)/(\sigma\sigma_d)^2$, $n \sim \mathcal N(0, I)$ and
+    $\omega$ = cell area $\times$ loss mask, normalised by $\sum\omega$. The noise level is
+    drawn per sample from a schedule (Section~\ref{sec:schedules}).
+  \item \textbf{Sampler.} Deterministic second-order Heun solver, 32 steps, noise levels from
+    $\sigma_\mathrm{max}$ down to 0.002 with $\rho = 7$. Ensemble members differ only in
+    their starting noise.
+  \item \textbf{\code{regress}.} The same U-Net trained with weighted MSE to predict $d$
+    directly from the input: a deterministic estimate of the conditional mean.
+\end{itemize}
+
+\subsection{Noise schedules}\label{sec:schedules}
+\begin{center}
+\begin{tabularx}{\linewidth}{llcL}
+  \toprule
+  model & training noise $\ln\sigma$ & $\sigma_\mathrm{max}$ & share of batches with $\sigma > 10$ \\
+  \midrule
+  Phase 1 & $\mathcal N(-1.2,\ 1.2^2)$ (EDM default) & 80 & $\approx 0.2\%$ \\
+  \code{wide} (Phase 1b) & $\mathcal N(-0.4,\ 1.6^2)$ & 20 & $\approx 4.5\%$ \\
+  \code{logu} (Phase 1b) & uniform on $[\ln 0.002,\ \ln 20]$ & 20 & $\approx 7.5\%$ \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Training}
+AdamW, learning rate $2\times10^{-4}$ with a 1000-step linear warm-up and no decay, batch 32,
+gradient clipping at 1, exponential moving average (EMA) of the weights with decay 0.999.
+Each batch holds samples from one rung, chosen uniformly from the training rungs. Every 2000
+steps the EMA weights are scored on all validation months at the training rungs; the
+checkpoint with the lowest validation loss is kept.
+
+\begin{center}
+\begin{tabular}{llllr}
+  \toprule
+  run & data & rungs & steps & wall time \\
+  \midrule
+  diffusion (Phase 1) & GRACE DDK5 & R1+R2 & 40\,000 & 1.8\,h\textsuperscript{a} \\
+  \code{regress} & GRACE DDK5 & R1+R2 & 40\,000 & 1.8\,h\textsuperscript{a} \\
+  oracle & GRACE DDK5 & R3 & 40\,000 & 3.8\,h \\
+  twin diffusion (Phase 1) & twin & R1+R2 & 40\,000 & 1.8\,h\textsuperscript{a} \\
+  \code{wide}, \code{logu} (Phase 1b) & GRACE DDK5 & R1+R2 & 60\,000 & 2.8\,h\textsuperscript{b} \\
+  \bottomrule
+\end{tabular}\\[2pt]
+{\footnotesize \textsuperscript{a}three runs sharing the GPU;
+\textsuperscript{b}two runs sharing the GPU with a scoring job.}
+\end{center}
+
+\noindent The \emph{oracle} is the same diffusion model trained on R3 itself. It is not a
+candidate method: it shows how well R3 detail can be learned from R3 data, and hence what
+transfer costs.
+
+\subsection{Baselines}
+\begin{itemize}
+  \item \code{input}: the blurred field itself, with no added detail. The floor.
+  \item \code{spectral-gauss}: fit a power law to the degree variance of the degrees the input
+    carries, extrapolate it into the missing degrees, draw random coefficients with that
+    spectrum and add them to the input. Right power, no learned structure. Because it adapts
+    to each month's spectrum, it is a fair competitor at any rung.
+  \item \code{spectral-gauss-clim}: the same, using the mean training-month spectrum.
+  \item \code{regress}: as above.
+\end{itemize}
+
+\subsection{Metrics}
+All metrics are computed on validation months in the original (unrotated) frame, weighted by
+cell area over land outside the test box and ice sheets, in mm EWH, then averaged over months.
+\begin{itemize}
+  \item \textbf{CRPS} (continuous ranked probability score), the main score: per pixel, the
+    ``fair'' ensemble estimator
+    $\frac1M\sum_i|X_i - y| - \frac{1}{2M(M-1)}\sum_{i,j}|X_i - X_j|$. It rewards being close
+    to the truth and having the right spread. For a single prediction it reduces to the
+    absolute error. Lower is better.
+  \item \textbf{Ensemble-mean RMSE} and \textbf{correlation} of the ensemble-mean detail with
+    the true detail.
+  \item \textbf{Spread/error}: ensemble standard deviation over ensemble-mean RMSE, times
+    $\sqrt{(M+1)/M}$. 1 means the ensemble's uncertainty is honest; below 1 means
+    over-confident.
+  \item \textbf{Coverage}: fraction of pixels whose true value falls inside the central 50\%
+    and 90\% of the ensemble (randomised probability integral transform).
+  \item \textbf{Detail power ratio}: power of the generated detail over that of the true
+    detail.
+  \item \textbf{Paired comparisons}: the per-month CRPS difference between two methods, with a
+    95\% interval from a moving-block bootstrap over months (blocks of 6 months for GRACE,
+    12 for the twin).
+\end{itemize}
+Ensembles have 32 members (16 at twin R5).
+
+\subsection{Experiments}
+\begin{itemize}
+  \item \textbf{A} (within rung): score at R2 on GRACE DDK5.
+  \item \textbf{B} (the gate): score the R1+R2 models at R3, on GRACE DDK5 and unfiltered
+    GRACE, with the oracle.
+  \item \textbf{C} (closed loop): the twin model trained on twin R1+R2, scored at R2 to R5.
+\end{itemize}
+
+\paragraph{Gate criteria} (agreed before the runs). The transferred model must
+\begin{enumerate}
+  \item beat \code{spectral-gauss} in CRPS at R3 (bootstrap interval excluding zero);
+  \item be within 10\% of the oracle's CRPS;
+  \item have spread/error in $[0.85, 1.15]$ and coverage within 5 points of nominal;
+  \item show no excess stripe power relative to the truth;
+  \item satisfy the same on the twin, and against truth at R4 and R5.
+\end{enumerate}
+
+\subsection{Diagnostic}
+To see what a trained diffusion model has learned, we feed its denoiser pure noise of level
+$\sigma$ together with a validation input. At large $\sigma$ the noise hides everything, so
+$D(\cdot;\sigma)$ is the model's own best guess of the detail from the input alone, which is
+directly comparable to \code{regress}. We report the correlation of that guess, and of the
+32-member ensemble mean, with the true detail (\code{scripts/diagnose\_sampler.py}).
+
+\section{Results}
+
+\subsection{Phase 1}
+
+\begin{table}[ht]
+\centering\small
+\caption{Phase 1, GRACE DDK5, validation months. CRPS and RMSE in mm. Corr.: correlation of the
+ensemble-mean detail with the true detail. Coverage: share inside the 50\%/90\% ensemble
+ranges.}
+\label{tab:p1}
+\begin{tabular}{llrrrrrr}
+  \toprule
+  rung & method & CRPS & RMSE & corr. & spread/err. & cov.\ 50/90 & power \\
+  \midrule
+  R2 (trained) & input & 62.9 & 84.2 & $-0.12$ & --- & --- & 0.02 \\
+   & spectral-gauss & 45.9 & 85.3 & $-0.08$ & 0.91 & 51/89 & 0.90 \\
+   & spectral-gauss-clim & 47.5 & 84.6 & $-0.10$ & 0.57 & 35/72 & 0.35 \\
+   & diffusion & 37.2 & 70.4 & 0.53 & 0.90 & 44/85 & 0.74 \\
+   & regress & \textbf{26.3} & 33.9 & 0.91 & --- & --- & 0.83 \\
+  \midrule
+  R3 (gate) & input & 64.0 & 88.2 & 0.18 & --- & --- & 0.07 \\
+   & spectral-gauss & 48.7 & 90.6 & 0.13 & 1.23 & 66/95 & 1.59 \\
+   & spectral-gauss-clim & 47.6 & 89.0 & 0.16 & 0.71 & 45/82 & 0.56 \\
+   & diffusion & 45.5 & 86.5 & 0.28 & 0.82 & 40/82 & 0.77 \\
+   & regress & 71.1 & 97.9 & 0.25 & --- & --- & 0.58 \\
+   & \emph{oracle} & \emph{24.8} & \emph{46.6} & \emph{0.86} & \emph{0.88} & \emph{46/86} &
+     \emph{0.79} \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Experiment A.} At R2 the diffusion model beats both Gaussian baselines (CRPS
+$-8.7$\,mm against \code{spectral-gauss}, 95\% interval $[-9.8, -7.8]$), but it is clearly
+worse than \code{regress} (37.2 vs 26.3\,mm; ensemble-mean correlation 0.53 vs 0.91). A
+diffusion ensemble's mean should approach the regression answer, so this pointed to a problem.
+
+\paragraph{Experiment B.} At R3 the diffusion model beats \code{spectral-gauss} by $3.3$\,mm
+(95\% interval $[-3.7, -2.9]$, better in every month), and by 3.1\,mm on unfiltered GRACE
+($[-3.5, -2.7]$; CRPS 46.4 vs 49.4). The oracle reaches 24.8\,mm. \code{regress} collapses
+at R3 (71.1\,mm, worse than adding nothing).
+
+\paragraph{Experiment C (twin).} Figure~\ref{fig:twin} and Table~\ref{tab:twin}. The twin model
+leads clearly where it was trained and by a small, shrinking margin above it.
+
+\begin{table}[ht]
+\centering\small
+\caption{Experiment C, twin, Phase 1 model trained on R1+R2. CRPS in mm; the last column is
+the paired difference to \code{spectral-gauss} with its 95\% bootstrap interval.}
+\label{tab:twin}
+\begin{tabular}{lrrrrcc}
+  \toprule
+  rung & input & spectral-gauss & diffusion & spread/err. & cov.\ 50/90 & diff.\ $-$ s.-gauss \\
+  \midrule
+  R2 (trained) & 21.2 & 16.1 & \textbf{9.4} & 1.07 & 49/90 & $-6.7\ [-6.9, -6.5]$ \\
+  R3 & 19.2 & 14.4 & \textbf{13.0} & 0.92 & 45/85 & $-1.4\ [-1.5, -1.2]$ \\
+  R4 & 19.6 & 15.0 & \textbf{14.1} & 0.87 & 48/87 & $-0.8\ [-0.9, -0.8]$ \\
+  R5 & 20.1 & 15.5 & \textbf{14.7} & 0.88 & 53/90 & $-0.8\ [-0.8, -0.7]$ \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.55\linewidth]{figures/twin_rungs.pdf}
+  \caption{Twin, CRPS by rung for the Phase 1 twin model (trained on R1+R2, shaded) and the
+  baselines. The model's lead shrinks quickly above the training rungs.}
+  \label{fig:twin}
+\end{figure}
+
+\paragraph{Gate, Phase 1 model.} Criterion 1 \pass; criterion 2 \fail{} (45.5 vs 24.8\,mm,
+84\% above the oracle); criterion 3 \fail{} (spread/error 0.82, coverage 40/82\%);
+criterion 4 not measured (the stripe metric is not implemented yet); criterion 5 partial
+(beats the baselines on the twin up to R5, but by a small margin).
+
+\subsection{Diagnosis}
+The sampler was ruled out first: 128 sampling steps gave the same result as 32 (ensemble-mean
+correlation at R2 0.565 vs 0.563). The diagnostic then showed that the Phase 1 model's denoiser
+barely used its input at high noise: at $\sigma = 10$ its guess correlated 0.26 (R1) and 0.40
+(R2) with the true detail, where \code{regress} reaches 0.89 and 0.92. With the default schedule
+only about 0.2\% of training batches have $\sigma > 10$, and these are the steps where the
+sampler sets the large-scale shape of the detail. The R3 oracle, trained with the same schedule,
+did learn this regime (0.79), plausibly because its larger grids carry 4--16 times more pixels
+of signal per batch. The validation loss did not reveal the problem because it is dominated by
+easy low-noise cases. Phase 1b retrains with the two wider schedules of
+Section~\ref{sec:schedules}.
+
+\subsection{Phase 1b}
+
+\begin{table}[ht]
+\centering\small
+\caption{Phase 1b against the Phase 1 model, GRACE DDK5 (unfiltered GRACE in brackets). Last
+column: paired R3 CRPS difference to \code{spectral-gauss} (48.7\,mm), 95\% interval.}
+\label{tab:p1b}
+\begin{tabular}{lrrrrrc}
+  \toprule
+  & \multicolumn{2}{c}{R2 (trained)} & \multicolumn{3}{c}{R3 (gate)} & \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-6}
+  model & CRPS & corr. & CRPS & corr. & spread/err. & $-$ spectral-gauss \\
+  \midrule
+  diffusion, Phase 1 & 37.2 & 0.53 & 45.5 (46.4) & 0.28 & 0.82 & $-3.3\ [-3.7, -2.9]$ \\
+  \code{wide} & \textbf{20.5} & 0.90 & 52.5 (53.5) & 0.21 & 0.37 & $+3.8\ [+2.7, +4.6]$ \\
+  \code{logu} & 21.6 & 0.89 & 51.0 (52.0) & 0.23 & 0.49 & $+2.3\ [+1.7, +2.8]$ \\
+  \midrule
+  regress & 26.3 & 0.91 & 71.1 (72.0) & 0.25 & --- & \\
+  oracle & --- & --- & 24.8 (25.5) & 0.86 & 0.88 & \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+The schedule fix worked where the model was trained. At $\sigma = 10$ the \code{wide} denoiser
+now correlates 0.84 (R1) and 0.91 (R2) with the true detail, and the ensemble mean matches
+\code{regress} (0.81 and 0.91; Figure~\ref{fig:diag}). At R2 the diffusion model is now the best
+method tested, 20.5\,mm against 26.3\,mm for \code{regress} (Table~\ref{tab:p1b}).
+
+One octave up the picture reverses (Figure~\ref{fig:crps}). Both Phase 1b models lose to
+\code{spectral-gauss} at R3, the bootstrap intervals exclude zero, and they are strongly
+over-confident (spread/error 0.37 and 0.49; \code{wide} covers 21\% and 50\% where 50\% and
+90\% are nominal). Their R3 ensemble mean correlates only about 0.2 with the truth, against
+0.84 for the oracle. Unfiltered GRACE gives the same picture.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.55\linewidth]{figures/crps_r2_r3.pdf}
+  \caption{GRACE DDK5: CRPS at the training rung R2 (blue) and one octave up at R3 (orange).
+  Dashed: \code{spectral-gauss} at R3, the bar for the gate. Every learned R1+R2 model gets
+  worse going up an octave; the better it is at R2, the larger the drop.}
+  \label{fig:crps}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.55\linewidth]{figures/diagnosis_corr.pdf}
+  \caption{Correlation of the ensemble mean (\code{regress}: its prediction) with the true
+  detail, validation months, GRACE DDK5. The schedule fix (\code{wide}) brings the diffusion
+  model to \code{regress}'s level at R1 and R2, but no R1+R2 model carries this to R3, where
+  the oracle shows the detail is learnable.}
+  \label{fig:diag}
+\end{figure}
+
+\section{Discussion}
+
+\begin{itemize}
+  \item \textbf{The gate is not passed.} No model trained on R1+R2 meets criteria 2 and 3 at R3,
+    and the properly trained models also fail criterion 1.
+  \item \textbf{The Phase 1 result was misleading.} The first model's small lead at R3 came from
+    it being weak: it produced detail close to generic noise, which is roughly what
+    \code{spectral-gauss} does. Once the model learned the R1/R2 mapping properly, it
+    transferred worse.
+  \item \textbf{Skill learned at R1/R2 does not carry over on GRACE.} \code{regress} and both
+    Phase 1b models follow the same pattern: strong where trained, worse than a power-law
+    extrapolation one octave up. Their R3 output is under-powered and too confident: the
+    models do not recognise R3 inputs as the kind of field they were trained on.
+  \item \textbf{R3 detail is learnable from R3 data.} The oracle (24.8\,mm, correlation 0.86)
+    shows the information is there. What fails is the assumption that the mapping between
+    octaves is the same at every scale.
+  \item \textbf{Physics or GRACE?} Two explanations remain. The relation between a TWS field and
+    its next octave may genuinely change with scale (river basins and climate zones are not
+    self-similar from 2500\,km to 600\,km). Or GRACE-specific effects may break transfer, since
+    noise grows and DDK5 attenuates more in degrees 16--32. The twin has neither noise nor
+    filter, so a properly trained twin model separates the two.
+  \item \textbf{Lessons for method.} The standard EDM noise schedule (tuned for natural images)
+    was unsuitable here, and the validation loss hid it. A direct check of the denoiser against
+    a regression model is cheap and should be routine.
+\end{itemize}
+
+\section{Pending: Phase 1c}\label{sec:pending}
+The twin model is being retrained with the \code{wide} schedule (60\,000 steps) and scored at R2,
+R3 and R4 (\code{scripts/phase1c\_twin.sh}, started 17 November 2026). The Phase 1 twin model
+in Table~\ref{tab:twin} had the same weakness as the Phase 1 GRACE model, so its modest transfer
+cannot be taken at face value.
+\begin{itemize}
+  \item If the properly trained twin model \emph{transfers}, the GRACE failure is likely due to
+    GRACE noise or filtering, and worth addressing (e.g.\ a different filter, or targets
+    weighted by signal-to-noise).
+  \item If it \emph{also fails}, octave transfer is not a sound basis for going below GRACE's
+    resolution, and the plan should change. The natural alternative, suggested by the oracle,
+    is to train directly on the band of interest, which for scales GRACE cannot resolve means
+    training on a hydrological model.
+\end{itemize}
+
+\section{Not yet done}
+\begin{itemize}
+  \item Stripe metric (criterion 4) and a classifier two-sample test of generated vs real
+    detail.
+  \item Degree-1 (geocentre) terms.
+  \item Test-box evaluation (experiment D): only after a gate decision.
+  \item Confirmation of the data sources.
+\end{itemize}
+
+\appendix
+\section{Reproducing}
+\begin{itemize}
+  \item Phase 1: \code{scripts/phase1.sh} (commits \code{3be72f3}, \code{9fe39fd},
+    \code{6fee1f9}).
+  \item Diagnostic: \code{scripts/diagnose\_sampler.py}.
+  \item Phase 1b: \code{scripts/phase1b\_noise.sh} (commit \code{c78433c}).
+  \item Phase 1c: \code{scripts/phase1c\_twin.sh} (commit \code{c76b8d6}).
+  \item Scores: \code{runs/eval/*.csv}, one row per method, rung and month.
+  \item Figures: \code{reports/phase1/make\_figures.py}.
+\end{itemize}
+
+\end{document}
