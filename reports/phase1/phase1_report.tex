@@ -51,7 +51,9 @@ appeared to pass part of the gate, but a diagnostic showed it had barely learned
 input; its small advantage came from being close to generic noise. The same experiment on a
 hydrological-model twin, which has no GRACE noise and no filter, gives the same result: strong
 where trained (7.2 vs 16.1\,mm), a tie one octave up (14.5 vs 14.4\,mm) and a loss two octaves
-up, with over-confident ensembles. The failure is therefore not specific to GRACE data.
+up, with over-confident ensembles. The failure is therefore not specific to GRACE data. We
+close with the proposed next step: learn the fine detail from hydrological models at the scales
+of interest and keep GRACE's coarse picture exactly through a consistency projection.
 \end{abstract}
 
 \section{Aim}
@@ -515,22 +517,128 @@ the gain in CRPS. By R4 the structural advantage is almost gone (0.36 vs 0.31).
     a regression model is cheap and should be routine.
 \end{itemize}
 
+\section{Why octave transfer did not work}\label{sec:why}
+The evidence, in order:
+\begin{enumerate}
+  \item \textbf{The detail itself is learnable.} A model trained at a given scale learns it
+    well: the R3 oracle reaches 24.8\,mm (correlation 0.86) against 48.7\,mm for
+    \code{spectral-gauss}; on the twin, the model trained at R2 reaches 7.2 vs 16.1\,mm.
+    Lack of information in the inputs is not the problem.
+  \item \textbf{The skill does not move between scales.} Every model that learned R1/R2 well
+    --- \code{regress}, \code{wide}, \code{logu} on GRACE, and \code{wide} on the twin --- is
+    no better than \code{spectral-gauss} one octave up, and the better a model is where it was
+    trained, the larger its drop (Figure~\ref{fig:crps}).
+  \item \textbf{It is not a GRACE artefact.} The twin has no GRACE noise and no DDK filter and
+    shows the same pattern (Section~\ref{sec:p1c}). What a field's next octave looks like,
+    given the field, changes with scale.
+  \item \textbf{The uncertainty does not grow where the model knows less.} Above the training
+    scale the ensembles are about half as wide as their errors (spread/error 0.37--0.49).
+    A model cannot tell that it is outside what it learned, so even partial structural skill
+    (twin R3 correlation 0.52 vs 0.34) is lost in CRPS.
+  \item \textbf{The early ``pass'' was an artefact.} The Phase 1 model beat
+    \code{spectral-gauss} at R3 only because a poorly chosen noise schedule left it close to
+    generic noise. With that fixed, the model is much better where trained and worse above.
+\end{enumerate}
+In short: \emph{fine detail must be learned from examples at that scale.} GRACE has no such
+examples below about 500\,km. Global hydrological models do.
+
+\section{Next step: learn detail from hydrological models, keep GRACE's coarse picture}
+\label{sec:next}
+\emph{Proposed; not yet built or agreed. Full draft: \code{docs/01-design-model-trained.md}.}
+
+\subsection{The idea}
+Train the diffusion model on hydrological-model TWS fields at the scales GRACE cannot resolve:
+blur a model's field to GRACE's resolution and learn to restore the model's own fine detail.
+Then give the network \emph{real GRACE} fields as input. The consistency projection of
+Section~3.2 fixes every coarse degree to GRACE's value exactly, so GRACE decides the large-scale
+picture and the network only adds detail below GRACE's resolution, as an ensemble. Several
+models are used, so the network learns hydrology rather than one model's quirks.
+
+GRACE is the input, not the target. Predicting GRACE from models is a different tool
+(correcting a model towards GRACE); its output is no sharper than GRACE.
+
+\subsection{How the Phase 1 results lead here}
+\begin{center}\small
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.42\linewidth}L}
+  \toprule
+  finding & design choice \\
+  \midrule
+  Detail is learnable at its own scale (oracle; twin R2) & Train at the target scales
+    themselves, never across scales. \\
+  Skill does not transfer up an octave & No octave jumping: each stage is trained at the
+    octave it generates. \\
+  GRACE has no examples below $\sim$500\,km & Take examples from hydrological models, which
+    resolve those scales. \\
+  The consistency projection is exact and cheap & Use it to keep GRACE's coarse degrees
+    unchanged in every output. \\
+  Uncertainty collapses outside the training data & Measure the model-to-GRACE mismatch
+    directly (gate G1) and widen the training data (several models, augmentation). \\
+  EDM's default noise schedule hid a weak model & Keep the fixed schedule and the denoiser
+    diagnostic as routine checks. \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Scales}
+GRACE supplies degrees up to 32 (about 600\,km); the network generates 32 $\to$ 128 (down to
+about 160\,km). We propose a cascade of two single-octave stages, 32 $\to$ 64 and
+64 $\to$ 128, each trained at its own scale on model data. These are the twin rungs R4 and R5,
+now trained directly instead of reached by transfer, and the rung code is reused unchanged.
+
+\subsection{The main risk}
+The network learns ``fine detail given a model's coarse field'', but will be given GRACE's.
+Models and GRACE disagree on the coarse picture (groundwater depletion, long-term trends,
+glaciers, some human water use). Mitigations: several models, masking of ice sheets and glaciers,
+input augmentation with GRACE-like noise and random trends --- and, above all, measuring the
+mismatch where GRACE can still check us (G1).
+
+\subsection{Gates}
+Validation years only; test years and the Türkiye box stay untouched until the gates are
+decided. Scores as in Phase 1 (CRPS, spread/error, coverage; paired block bootstrap against
+\code{spectral-gauss}).
+\begin{center}\small
+\begin{tabularx}{\linewidth}{lp{0.30\linewidth}L}
+  \toprule
+  gate & test & what it shows \\
+  \midrule
+  G0 & train and test on the same model(s), held-out years, at 32 $\to$ 64 and 64 $\to$ 128 &
+    the achievable upper bound, with no mismatch \\
+  G1 & train on models at 8 $\to$ 16 and 16 $\to$ 32; apply to blurred GRACE; score against
+    GRACE's own detail & the model-to-GRACE gap, against real data; compare with the
+    GRACE-trained models (20.5 and 24.8\,mm) and \code{spectral-gauss} (45.9 and 48.7\,mm) \\
+  G2 & train on all models but one; test on the held-out model at 32 $\to$ 64 and 64 $\to$ 128 &
+    transfer to an unseen ``world'' at the scales GRACE cannot check \\
+  G3 & GRACE in, 32 $\to$ 128 out, in the Türkiye box & the end product, against independent
+    local data \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+To pass G1 and G2 a model must beat \code{spectral-gauss} with calibrated spread
+(spread/error 0.85--1.15); for G1 it should also come close to the GRACE-trained models.
+
+\subsection{Open questions}
+\begin{enumerate}
+  \item Which hydrological models (and which forcing/protocol, e.g.\ ISIMIP3a)?
+  \item Is degree 128 ($\sim$160\,km) the right target, or finer (degree 256 needs
+    $\le 0.25^\circ$ models)?
+  \item Which GRACE product and filter for the input?
+  \item Which independent data exist for Türkiye (wells, basin budgets, regional products)?
+\end{enumerate}
+
 \section{Conclusion}
-Octave transfer, as tested here, is not a sound basis for sharpening GRACE below its resolution:
-skill learned at coarse scales does not carry to finer ones, on GRACE or on clean model data.
-The oracle shows that detail at a given scale is learnable from data at that scale. For scales
-GRACE cannot resolve, that points towards training on a hydrological model (or another source
-with real fine-scale content) for the band of interest, with GRACE constraining the coarse
-degrees through the consistency projection. That is a change of plan and is left for
-discussion.
+Octave transfer, as tested here, is not a sound basis for sharpening GRACE below its
+resolution: skill learned at coarse scales does not carry to finer ones, on GRACE or on clean
+model data, and the models' uncertainty does not widen to warn of it. Detail at a given scale
+is, however, learnable from data at that scale. We therefore propose to learn the sub-GRACE
+detail from several hydrological models, keep GRACE's coarse picture exactly through the
+consistency projection, and test the result first against GRACE itself at observable scales
+(G1) and against held-out models at the target scales (G2).
 
 \section{Not yet done}
 \begin{itemize}
-  \item Stripe metric (criterion 4) and a classifier two-sample test of generated vs real
-    detail.
+  \item Stripe metric and a classifier two-sample test of generated vs real detail.
   \item Degree-1 (geocentre) terms.
-  \item Test-box evaluation (experiment D): only after a gate decision.
-  \item Confirmation of the data sources.
+  \item Confirmation of the data sources (GRACE and hydrological models).
 \end{itemize}
 
 \appendix
