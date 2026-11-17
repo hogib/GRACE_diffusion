@@ -368,7 +368,7 @@ oracle learned it anyway (0.79), plausibly because its grids carry 4–16× more
 **Phase 1b (commit c78433c, 60k steps, sampler from σ_max = 20).** `wide`: ln σ ~ N(−0.4, 1.6²);
 `logu`: ln σ uniform on [0.002, 20].
 
-| | A: R2 CRPS | R2 corr (mean) | B: R3 CRPS (DDK5 / raw) | R3 corr | R3 spread/error | R3 vs spread-gauss (95%) |
+| | A: R2 CRPS | R2 corr (mean) | B: R3 CRPS (DDK5 / raw) | R3 corr | R3 spread/error | R3 vs spectral-gauss (95%) |
 |---|---|---|---|---|---|---|
 | Phase 1 diffusion | 37.2 | 0.53 | 45.5 / 46.4 | 0.28 | 0.82 | −3.3 [−3.7, −2.9] |
 | wide | **20.5** | 0.90 | 52.5 / 53.5 | 0.21 | 0.37 | +3.8 [+2.7, +4.6] |
