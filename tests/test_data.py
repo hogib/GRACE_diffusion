@@ -113,3 +113,20 @@ def test_watergap_to_dh_preserves_smooth_field():
     LA2, LO2 = np.meshgrid(lat_dh, lon_dh, indexing="ij")
     expect = np.sin(np.radians(LA2)) + np.cos(np.radians(LO2))
     assert np.abs(dh - expect)[1:].max() < 1e-3        # row 0 is the pole (extrapolated)
+
+
+def test_multisampler_mixes_datasets():
+    from grace_diffusion.data import MultiSampler, Sampler
+    months = [f"{y}-{m:02d}" for y in range(1980, 1995) for m in range(1, 13)]
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(len(months), 2, 17, 17)) * 0
+    b = rng.normal(size=(len(months), 2, 17, 17))
+    a[:, :, :2] = b[:, :, :2] = 0
+    ms = MultiSampler([Sampler(months, a, "twin", "train", rungs=(16,), rotate="none"),
+                       Sampler(months, b, "twin", "train", rungs=(16,), rotate="none")])
+    bt = ms.batch(np.random.default_rng(1), 16)
+    zero = np.array([np.allclose(t, 0) for t in bt["target"]])
+    assert 0 < zero.sum() < 16                       # both datasets appear
+    val = MultiSampler([Sampler(months, a, "twin", "val", rungs=(16,), rotate="none"),
+                        Sampler(months, b, "twin", "val", rungs=(16,), rotate="none")])
+    assert len(val.fixed_set(16)) == 2 * 60          # 1990-1994 val months, both datasets

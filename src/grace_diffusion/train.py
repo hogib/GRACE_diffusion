@@ -23,7 +23,7 @@ from .model.unet import UNet
 class BatchStream(torch.utils.data.IterableDataset):
     """Endless stream of single-rung batches; reproducible per (seed, worker, k)."""
 
-    def __init__(self, sampler: data.Sampler, batch_size: int, seed: int):
+    def __init__(self, sampler: data.Sampler | data.MultiSampler, batch_size: int, seed: int):
         self.sampler, self.batch_size, self.seed = sampler, batch_size, seed
 
     def __iter__(self):
@@ -43,7 +43,19 @@ def to_dev(b, dev):
     return detail, cond, b["weight"].to(dev, non_blocking=True)
 
 
-def estimate_sigma_data(sampler: data.Sampler, n: int = 40, batch: int = 16) -> float:
+def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str):
+    """Train and validation samplers; `datasets` is one name or a comma-separated list."""
+    tr, va = [], []
+    for name in datasets.split(","):
+        months, coeffs = prep.load(Path(proc), name)
+        tr.append(data.Sampler(months, coeffs, kind, "train", rungs=rungs, rotate=rotate))
+        va.append(data.Sampler(months, coeffs, kind, "val", rungs=rungs, rotate="none"))
+    if len(tr) == 1:
+        return tr[0], va[0]
+    return data.MultiSampler(tr), data.MultiSampler(va)
+
+
+def estimate_sigma_data(sampler: data.Sampler | data.MultiSampler, n: int = 40, batch: int = 16) -> float:
     """Weighted RMS of the normalised detail over random training batches."""
     num = den = 0.0
     for k in range(n):
@@ -117,9 +129,7 @@ def main(argv=None):
     torch.manual_seed(a.seed)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rungs = tuple(int(x) for x in a.rungs.split(","))
-    months, coeffs = prep.load(Path(a.proc), a.dataset)
-    train_s = data.Sampler(months, coeffs, a.kind, "train", rungs=rungs, rotate=a.rotate)
-    val_s = data.Sampler(months, coeffs, a.kind, "val", rungs=rungs, rotate="none")
+    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate)
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
                blocks=a.blocks, dropout=a.dropout, rungs=list(rungs), dataset=a.dataset,
                kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean, p_std=a.p_std,

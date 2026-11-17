@@ -140,3 +140,42 @@ class Sampler:
                                        hold_out_test_box=self.hold_out_test_box,
                                        mask_ice=self.mask_ice))
         return out
+
+
+class MultiSampler:
+    """Several datasets (e.g. hydrological models) behind the Sampler interface.
+
+    Each sample of a batch comes from a uniformly chosen dataset; a batch has one rung.
+    fixed_set concatenates every dataset's evaluation set.
+    """
+
+    def __init__(self, samplers: list[Sampler]):
+        if not samplers:
+            raise ValueError("no samplers")
+        rungs = {s.rungs for s in samplers}
+        if len(rungs) != 1:
+            raise ValueError(f"samplers disagree on rungs: {rungs}")
+        self.samplers = samplers
+        self.rungs = samplers[0].rungs
+        self.rung_probs = samplers[0].rung_probs
+
+    def batch(self, rng: np.random.Generator, batch_size: int, L: int | None = None) -> dict:
+        if L is None:
+            L = int(rng.choice(self.rungs, p=self.rung_probs))
+        which = rng.integers(len(self.samplers), size=batch_size)
+        samples = []
+        for k in which:
+            s = self.samplers[k]
+            i = rng.choice(s.idx)
+            samples.append(make_sample(s.coeffs[i], s.months[i], L, s.rotation(rng),
+                                       hold_out_test_box=s.hold_out_test_box,
+                                       mask_ice=s.mask_ice))
+        return stack(samples)
+
+    def batches(self, seed: int, batch_size: int, n_batches: int):
+        for k in range(n_batches):
+            yield self.batch(np.random.default_rng([seed, k]), batch_size)
+
+    def fixed_set(self, L: int, rotations_per_month: int = 1, seed: int = 0) -> list[Sample]:
+        return [x for s in self.samplers for x in s.fixed_set(L, rotations_per_month, seed)]
+
