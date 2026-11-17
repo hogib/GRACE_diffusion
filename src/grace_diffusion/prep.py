@@ -74,16 +74,24 @@ def runaway_cells(tws, threshold_mm: float = 1000.0) -> np.ndarray:
     return np.abs(late - early) > threshold_mm
 
 
-def build_twin(raw: Path, out: Path, threshold_mm: float = 1000.0) -> None:
+def build_model(path: Path, out_file: Path, threshold_mm: float = 1000.0) -> dict:
+    """One hydrological model's monthly TWS (0.5 deg cell-centred, variable 'tws', mm) to
+    spherical-harmonic anomalies to degree TWIN_LMAX, stored like twin.npz.
+
+    Runaway cells (see runaway_cells) count as zero anomaly; anomalies are relative to
+    2004-2009, as for GRACE; degrees 0 and 1 are zeroed.
+    """
     import xarray as xr
 
-    ds = xr.open_dataset(raw / TWIN_FILE)
+    ds = xr.open_dataset(path, use_cftime=True)
     tws = ds["tws"]
+    assert tws.shape[1:] == (360, 720), tws.shape
+    assert float(ds["lat"][0]) > 0 and float(ds["lon"][0]) < 0, "unexpected grid orientation"
     bad = runaway_cells(tws, threshold_mm)
     months = [f"{t.year:04d}-{t.month:02d}" for t in tws["time"].values]
     coeffs = np.empty((len(months), 2, TWIN_LMAX + 1, TWIN_LMAX + 1), dtype=np.float64)
     for i in range(len(months)):
-        f = tws.isel(time=i).values.copy()
+        f = tws.isel(time=i).values.astype(np.float64)
         f[bad] = np.nan                                # excluded cells count as zero anomaly
         dh = watergap_to_dh(f)
         coeffs[i] = pysh.SHGrid.from_array(dh, grid="DH").expand(
@@ -91,7 +99,24 @@ def build_twin(raw: Path, out: Path, threshold_mm: float = 1000.0) -> None:
     ref = np.array(["2004" <= m[:4] <= "2009" for m in months])
     coeffs -= coeffs[ref].mean(axis=0)
     coeffs[:, :, :2, :] = 0.0
-    np.savez(out / "twin.npz", months=np.array(months), coeffs=coeffs.astype(np.float32))
+    np.savez(out_file, months=np.array(months), coeffs=coeffs.astype(np.float32))
+    return {"months": len(months), "runaway_cells": int(bad.sum()),
+            "land_cells": int(np.isfinite(tws.isel(time=0).values).sum())}
+
+
+def build_twin(raw: Path, out: Path, threshold_mm: float = 1000.0) -> None:
+    build_model(raw / TWIN_FILE, out / "twin.npz", threshold_mm)
+
+
+def build_isimip(raw: Path, out: Path, threshold_mm: float = 1000.0) -> None:
+    """Every ISIMIP3a TWS file in raw/isimip/ to out/isimip_<model>.npz."""
+    for path in sorted((raw / "isimip").glob("*_tws_global_monthly_*.nc")):
+        model = path.name.split("_")[0]
+        target = out / f"isimip_{model}.npz"
+        if target.exists():
+            continue
+        info = build_model(path, target, threshold_mm)
+        print(model, info, flush=True)
 
 
 def build_landmask(raw: Path, out: Path) -> None:
@@ -120,3 +145,5 @@ if __name__ == "__main__":
         build_landmask(raw, out)
     if "twin" in which:
         build_twin(raw, out)
+    if "isimip" in which:
+        build_isimip(raw, out)
