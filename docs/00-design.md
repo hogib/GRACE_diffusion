@@ -338,3 +338,48 @@ No filter keeps any signal above degree 60. DDK removes the stripes in the
 test box; Gaussian 300 km leaves elongated north–south features. The noise
 proxy includes real month-to-month change, so signal estimates are lower
 bounds, and the 31–60 "kept" values rest on a noisy signal estimate.
+
+## Appendix B — Phase 1 results (2026-11-16/17)
+
+Validation months only (GRACE 2020–2022, twin 1990–2001); scored over validation land;
+CRPS in mm EWH; 32 members (16 at R5). Raw scores: `runs/eval/*.csv` on the server;
+scripts `scripts/phase1.sh`, `scripts/phase1b_noise.sh`, `scripts/diagnose_sampler.py`.
+
+**Phase 1 (commit 3be72f3/9fe39fd, 40k steps, EDM default noise schedule).**
+
+| CRPS | input | spectral-gauss | diffusion | regress | oracle |
+|---|---|---|---|---|---|
+| A: GRACE DDK5 R2 | 62.9 | 45.9 | 37.2 | **26.3** | — |
+| B: GRACE DDK5 R3 | 64.0 | 48.7 | 45.5 | 71.1 | **24.8** |
+| B: GRACE raw R3 | 65.1 | 49.4 | 46.4 | 72.0 | 25.5 |
+| C: twin R2 / R3 / R4 / R5 | 21.2 / 19.2 / 19.6 / 20.1 | 16.1 / 14.4 / 15.0 / 15.5 | 9.4 / 13.0 / 14.1 / 14.7 | — | — |
+
+Gate (§7.2), Phase 1 model: beats spectral-gauss at R3 (−3.3 mm, block-bootstrap 95%
+[−3.7, −2.9]) ✅; within 10% of the oracle ❌ (+84%); spread/error 0.82, coverage 40/82% ❌;
+stripes not measured; twin R3–R5 beats baselines by a shrinking margin (−1.4, −0.8, −0.8 mm).
+**Gate not passed.**
+
+**Diagnosis.** The Phase 1 diffusion model was weaker than `regress` in-distribution. The
+sampler was not the cause (32 vs 128 steps identical). Its denoiser barely used the input
+at high noise (corr with true detail at σ=10: 0.26 at R1, 0.40 at R2, vs 0.89/0.92 for
+regress): EDM's default ln σ ~ N(−1.2, 1.2²) puts only ~0.2% of batches at σ > 10. The R3
+oracle learned it anyway (0.79), plausibly because its grids carry 4–16× more pixels per batch.
+
+**Phase 1b (commit c78433c, 60k steps, sampler from σ_max = 20).** `wide`: ln σ ~ N(−0.4, 1.6²);
+`logu`: ln σ uniform on [0.002, 20].
+
+| | A: R2 CRPS | R2 corr (mean) | B: R3 CRPS (DDK5 / raw) | R3 corr | R3 spread/error | R3 vs spread-gauss (95%) |
+|---|---|---|---|---|---|---|
+| Phase 1 diffusion | 37.2 | 0.53 | 45.5 / 46.4 | 0.28 | 0.82 | −3.3 [−3.7, −2.9] |
+| wide | **20.5** | 0.90 | 52.5 / 53.5 | 0.21 | 0.37 | +3.8 [+2.7, +4.6] |
+| logu | 21.6 | 0.89 | 51.0 / 52.0 | 0.23 | 0.49 | +2.3 [+1.7, +2.8] |
+
+**Reading.** With the noise schedule fixed, the model is now the best method in-distribution
+(R2: 20.5 vs 26.3 regress, 45.9 spectral-gauss; corr 0.90), but it transfers *worse*:
+at R3 it loses to spectral-gauss and is badly over-confident (spread/error 0.37–0.49).
+The Phase 1 model's apparent transfer win came from it being weak and close to generic
+noise. Like `regress`, a model that has learned R1/R2 well does not carry the skill one
+octave up on GRACE. The R3 oracle shows the R3 detail itself is learnable from R3 inputs.
+Not yet separated: whether the failure is the physics (GRACE fields not self-similar
+across these degrees) or GRACE/DDK-specific (filter attenuation and noise growing in
+16–32). The twin, retrained with the fixed schedule, separates these.
