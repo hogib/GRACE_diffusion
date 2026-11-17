@@ -128,6 +128,29 @@ def build_landmask(raw: Path, out: Path) -> None:
     np.savez(out / "landmask.npz", land=valid, lat=ds["lat"].values, lon=ds["lon"].values)
 
 
+def land_only(proc: Path, src: str, dst: str, mask_ice: bool = True) -> None:
+    """A dataset with ocean (and, by default, Greenland and Antarctica) set to zero, like
+    the hydrological models: synthesise each month on a fine grid, mask, re-expand to the
+    source degree, zero degrees 0 and 1. Input and truth are then both built from the
+    masked field, so the experiment stays consistent (design doc 01, section 4).
+    """
+    from . import grids
+
+    months, coeffs = load(proc, src)
+    lmax = coeffs.shape[-1] - 1
+    L = 128                                           # 512 x 1024 grid, exact to degree 255
+    mask = grids.land_mask(L, None, str(proc))
+    if mask_ice:
+        mask = mask * grids.loss_mask(L, None, hold_out_test_box=False, mask_ice=True,
+                                      margin_km=0.0)
+    out = np.empty_like(coeffs)
+    for i in range(len(months)):
+        g = sh.synth(coeffs[i].astype(np.float64), L) * mask
+        out[i] = sh.analyse(g, lmax=lmax)
+    out[:, :, :2, :] = 0.0
+    np.savez(Path(proc) / f"{dst}.npz", months=np.array(months), coeffs=out.astype(np.float32))
+
+
 def load(proc: Path, name: str) -> tuple[list[str], np.ndarray]:
     d = np.load(Path(proc) / f"{name}.npz")
     return [str(m) for m in d["months"]], d["coeffs"]
@@ -147,3 +170,6 @@ if __name__ == "__main__":
         build_twin(raw, out)
     if "isimip" in which:
         build_isimip(raw, out)
+    if "grace_land" in which:
+        for name in ("grace_ddk5", "grace_raw"):
+            land_only(out, name, f"{name}_land")

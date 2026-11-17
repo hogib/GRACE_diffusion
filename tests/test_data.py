@@ -130,3 +130,19 @@ def test_multisampler_mixes_datasets():
     val = MultiSampler([Sampler(months, a, "twin", "val", rungs=(16,), rotate="none"),
                         Sampler(months, b, "twin", "val", rungs=(16,), rotate="none")])
     assert len(val.fixed_set(16)) == 2 * 60          # 1990-1994 val months, both datasets
+
+
+def test_land_only_zeroes_ocean(tmp_path):
+    land = np.zeros((360, 720), dtype=bool)
+    land[100:200, 100:300] = True                    # one block of "land", away from ice
+    np.savez(tmp_path / "landmask.npz", land=land, lat=np.zeros(360), lon=np.zeros(720))
+    c = random_coeffs(16, np.random.default_rng(0))[None]
+    np.savez(tmp_path / "x.npz", months=np.array(["2005-01"]), coeffs=c.astype(np.float32))
+    prep.land_only(tmp_path, "x", "x_land")
+    months, cl = prep.load(tmp_path, "x_land")
+    assert months == ["2005-01"] and cl.shape == c.shape
+    g = sh.synth(cl[0].astype(float), 64)
+    glat, glon = sh.grid_coords(64)
+    ocean = (glat[:, None] > 60) | (glat[:, None] < -60)   # far from the land block
+    ocean = np.broadcast_to(ocean, g.shape)
+    assert np.abs(g[ocean]).mean() < 0.15 * np.abs(sh.synth(c[0], 64)[ocean]).mean()
