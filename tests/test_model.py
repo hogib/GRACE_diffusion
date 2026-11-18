@@ -63,3 +63,15 @@ def test_noise_schedules():
     assert abs(float((s > 1.0).float().mean()) - np.log(20) / np.log(1e4)) < 0.02
     s = EDM(net, p_mean=-0.4, p_std=1.6).draw_sigma(20000, "cpu")
     assert abs(float(s.log().mean()) + 0.4) < 0.05
+
+
+def test_churn_sampler_runs_and_differs():
+    torch.manual_seed(0)
+    m = EDM(UNet(base=8, mults=(1, 2), blocks=1), sigma_max=20.0).eval()
+    cond = torch.randn(2, 1, 16, 32)
+    g = lambda: torch.Generator().manual_seed(1)  # noqa: E731
+    a = m.sample(cond, steps=4, generator=g())
+    b = m.sample(cond, steps=4, generator=g(), churn=10.0)
+    c = m.sample(cond, steps=4, generator=g(), churn=10.0)
+    assert a.shape == b.shape == cond.shape and torch.isfinite(b).all()
+    assert not torch.allclose(a, b) and torch.allclose(b, c)

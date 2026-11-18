@@ -54,9 +54,11 @@ def score_month(method: Method, c: np.ndarray, L: int, members: int, rng: np.ran
 
 def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: tuple[int, ...],
         members: int, region: str, out_csv: Path, proc: Path = Path("data/proc"),
-        seed: int = 0, rotate: str = "none") -> list[dict]:
+        seed: int = 0, rotate: str = "none", max_months: int = 0) -> list[dict]:
     months, coeffs = prep.load(proc, dataset)
     idx = data.split_months(months, kind, split)
+    if max_months:
+        idx = idx[:max_months]
     rot = sh.rotation_to_equator(*grids.TEST_BOX.centre) if rotate == "test_box" else None
     rows = []
     for L in rungs:
@@ -105,9 +107,13 @@ def baseline_methods(coeffs: np.ndarray, train_idx: np.ndarray, max_L: int) -> d
 
 
 def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
-                 project: bool = True, chunk: int = 32) -> Method:
+                 project: bool = True, chunk: int = 32, churn: float = 0.0,
+                 inflate: float | dict[int, float] = 1.0) -> Method:
     """A trained checkpoint as a Method: diffusion samples M members, regress returns 1.
 
+    churn: stochastic sampler (see EDM.sample). inflate: stretch each member away from the
+    ensemble mean by this factor (one value, or one per target degree L). The projection is
+    linear and all members share the input's coarse degrees, so inflation keeps them exact.
     Members are generated in the normalised units of training (input / area RMS of input),
     rescaled to mm, and projected onto exact consistency with the input.
     """
@@ -132,14 +138,24 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
             for k in range(0, M, chunk):
                 m = min(chunk, M - k)
                 det.append(model.sample(cond1.expand(m, -1, -1, -1).contiguous(), steps=steps,
-                                        generator=g).double().cpu().numpy()[:, 0])
+                                        generator=g, churn=churn).double().cpu().numpy()[:, 0])
             det = np.concatenate(det)
         ens = inp[None] + s * det
         if project:
             ens = np.stack([sh.project_consistent(inp, e, L // 2) for e in ens])
+        k = inflate.get(L, 1.0) if isinstance(inflate, dict) else inflate
+        if k != 1.0 and len(ens) > 1:
+            mean = ens.mean(0)
+            ens = mean[None] + k * (ens - mean[None])
         return ens
 
     return method
+
+
+def parse_inflate(spec: str) -> float | dict[int, float]:
+    if ":" not in spec:
+        return float(spec)
+    return {int(k): float(v) for k, v in (x.split(":") for x in spec.split(","))}
 
 
 def main(argv=None):
@@ -158,7 +174,11 @@ def main(argv=None):
     p.add_argument("--rotate", default="none", choices=["none", "test_box"])
     p.add_argument("--steps", type=int, default=32)
     p.add_argument("--chunk", type=int, default=32, help="members sampled per GPU batch")
+    p.add_argument("--churn", type=float, default=0.0, help="stochastic sampler (EDM S_churn)")
+    p.add_argument("--inflate", default="1", help="spread factor: '1.4' or per rung '16:1.4,32:1.5'")
+    p.add_argument("--max-months", type=int, default=0, help="score only the first N months")
     a = p.parse_args(argv)
+    inflate = parse_inflate(a.inflate)
     rungs = tuple(int(x) for x in a.rungs.split(","))
     months, coeffs = prep.load(Path("data/proc"), a.dataset)
     methods: dict[str, Method] = {}
@@ -166,9 +186,10 @@ def main(argv=None):
         methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"), max(rungs)))
     for spec in a.ckpt:
         name, path = spec.split("=", 1)
-        methods[name] = model_method(path, steps=a.steps, chunk=a.chunk)
+        methods[name] = model_method(path, steps=a.steps, chunk=a.chunk, churn=a.churn,
+                                     inflate=inflate)
     rows = run(methods, a.dataset, a.kind, a.split, rungs, a.members, a.region, Path(a.out),
-               rotate=a.rotate)
+               rotate=a.rotate, max_months=a.max_months)
     print(summarise(rows))
 
 

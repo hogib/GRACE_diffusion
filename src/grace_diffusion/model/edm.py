@@ -53,8 +53,14 @@ class EDM(nn.Module):
     @torch.no_grad()
     def sample(self, cond: torch.Tensor, steps: int = 32, sigma_min: float | None = None,
                sigma_max: float | None = None, rho: float = 7.0,
-               generator: torch.Generator | None = None) -> torch.Tensor:
-        """Deterministic Heun sampler (EDM Algorithm 1) from Gaussian noise."""
+               generator: torch.Generator | None = None, churn: float = 0.0,
+               s_tmin: float = 0.0, s_tmax: float = float("inf"),
+               s_noise: float = 1.0) -> torch.Tensor:
+        """Heun sampler from Gaussian noise (EDM Algorithm 1; with churn > 0, Algorithm 2).
+
+        churn > 0 adds fresh noise before each step with sigma in [s_tmin, s_tmax], raising
+        the noise level from t to t (1 + gamma), gamma = min(churn / steps, sqrt(2) - 1).
+        """
         sigma_min = self.sigma_min if sigma_min is None else sigma_min
         sigma_max = self.sigma_max if sigma_max is None else sigma_max
         dev = cond.device
@@ -62,8 +68,14 @@ class EDM(nn.Module):
         t = (sigma_max ** (1 / rho) + i / (steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
         t = torch.cat([t, torch.zeros(1, device=dev, dtype=torch.float64)])
         x = torch.randn(cond.shape, generator=generator, device=dev, dtype=torch.float64) * t[0]
+        gamma0 = min(churn / steps, 2 ** 0.5 - 1)
         for k in range(steps):
             tc, tn = t[k], t[k + 1]
+            if gamma0 > 0 and s_tmin <= float(tc) <= s_tmax:
+                th = tc * (1 + gamma0)
+                eps = torch.randn(cond.shape, generator=generator, device=dev, dtype=torch.float64)
+                x = x + (th ** 2 - tc ** 2).sqrt() * s_noise * eps
+                tc = th
             sig = torch.full((cond.shape[0],), float(tc), device=dev)
             d = (x - self.denoise(x.float(), sig, cond).double()) / tc
             xn = x + (tn - tc) * d
