@@ -1,8 +1,12 @@
 """Train the diffusion model or the `regress` baseline (design doc §3, §7).
 
-Example (gate setup: train on R1 + R2 only):
-  uv run python -m grace_diffusion.train --dataset grace_ddk5 --kind grace \
-      --rungs 8,16 --model diffusion --steps 60000 --out runs/diffusion-ddk5-r12
+Examples:
+  # pre-train on WaterGAP alone
+  uv run python -m grace_diffusion.train --dataset twin --kind twin --rungs 16,32 \
+      --p-mean -0.4 --p-std 1.6 --sigma-max 20 --out runs/pre-wg-r23
+  # fine-tune on paired months: land-only GRACE in, WaterGAP detail out
+  uv run python -m grace_diffusion.train --dataset grace_ddk5_land --target twin --kind paired \
+      --rungs 16,32 --init runs/pre-wg-r23/best.pt --lr 5e-5 --steps 10000 --out runs/ft-wg-r23
 """
 from __future__ import annotations
 
@@ -43,13 +47,21 @@ def to_dev(b, dev):
     return detail, cond, b["weight"].to(dev, non_blocking=True)
 
 
-def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str):
-    """Train and validation samplers; `datasets` is one name or a comma-separated list."""
+def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: str | None = None):
+    """Train and validation samplers; `datasets` is one name or a comma-separated list.
+
+    target: dataset supplying the detail (paired samples); the datasets then supply the input.
+    """
     tr, va = [], []
+    tm, tc = prep.load(Path(proc), target) if target else (None, None)
     for name in datasets.split(","):
         months, coeffs = prep.load(Path(proc), name)
-        tr.append(data.Sampler(months, coeffs, kind, "train", rungs=rungs, rotate=rotate))
-        va.append(data.Sampler(months, coeffs, kind, "val", rungs=rungs, rotate="none"))
+        for split, rot, dst in (("train", rotate, tr), ("val", "none", va)):
+            if target:
+                dst.append(data.PairedSampler(months, coeffs, kind, split, rungs=rungs, rotate=rot,
+                                              tgt_months=tm, tgt_coeffs=tc))
+            else:
+                dst.append(data.Sampler(months, coeffs, kind, split, rungs=rungs, rotate=rot))
     if len(tr) == 1:
         return tr[0], va[0]
     return data.MultiSampler(tr), data.MultiSampler(va)
@@ -100,8 +112,12 @@ def val_loss(model, batches, dev) -> float:
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", default="grace_ddk5")
-    p.add_argument("--kind", default="grace")
-    p.add_argument("--rungs", default="8,16")
+    p.add_argument("--kind", default="grace", choices=sorted(data.SPLITS))
+    p.add_argument("--target", default=None,
+                   help="dataset supplying the detail (paired samples: input from --dataset)")
+    p.add_argument("--init", default=None,
+                   help="checkpoint to start from (fine-tuning); its network settings are kept")
+    p.add_argument("--rungs", default="8,16", help="steps: '8,16', or '8-32' (input 8, target 32)")
     p.add_argument("--model", choices=["diffusion", "regress"], default="diffusion")
     p.add_argument("--steps", type=int, default=60000)
     p.add_argument("--batch", type=int, default=32)
@@ -128,22 +144,35 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(a.seed)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    rungs = tuple(int(x) for x in a.rungs.split(","))
-    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate)
+    rungs = data.parse_steps(a.rungs)
+    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target)
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
-               blocks=a.blocks, dropout=a.dropout, rungs=list(rungs), dataset=a.dataset,
-               kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean, p_std=a.p_std,
-               sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch, lr=a.lr,
-               sigma_data=estimate_sigma_data(train_s))
+               blocks=a.blocks, dropout=a.dropout, rungs=a.rungs, dataset=a.dataset,
+               target=a.target, kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean,
+               p_std=a.p_std, sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch,
+               lr=a.lr, init=a.init)
+    init = None
+    if a.init:
+        # fine-tuning: keep the network and its preconditioning scale; the model type must match
+        init = torch.load(a.init, map_location="cpu", weights_only=False)
+        if init["cfg"]["model"] != a.model:
+            raise SystemExit(f"--init is a {init['cfg']['model']} checkpoint, --model is {a.model}")
+        for k in ("base", "mults", "blocks", "dropout", "sigma_data"):
+            cfg[k] = init["cfg"][k]
+        cfg["sigma_data_here"] = estimate_sigma_data(train_s)
+    else:
+        cfg["sigma_data"] = estimate_sigma_data(train_s)
     model = build(cfg).to(dev)
+    if init is not None:
+        model.load_state_dict(init["ema"])
     cfg["params"] = count_params(model)
     (out / "config.json").write_text(json.dumps(cfg, indent=2))
     print(json.dumps(cfg), flush=True)
 
     # fixed validation batches: every val month at every training rung, unrotated
     val_batches = []
-    for L in rungs:
-        samples = val_s.fixed_set(L)
+    for step_ in rungs:
+        samples = val_s.fixed_set(step_)
         for i in range(0, len(samples), a.batch):
             b = data.stack(samples[i: i + a.batch])
             val_batches.append({k: (torch.from_numpy(v) if isinstance(v, np.ndarray) else v)
@@ -160,6 +189,11 @@ def main(argv=None):
     wr = csv.writer(log)
     wr.writerow(["step", "train_loss", "val_loss_ema", "lr", "sec"])
     t0, run_loss, best = time.time(), [], np.inf
+    if init is not None:          # where fine-tuning starts from, on this run's validation set
+        ema_model.load_state_dict(ema.shadow)
+        vl0 = val_loss(ema_model, val_batches, dev)
+        wr.writerow([0, "", f"{vl0:.5f}", "", "0"])
+        print(f"step 0 val(ema) {vl0:.4f} (from {a.init})", flush=True)
     for step, b in enumerate(loader, start=1):
         detail, cond, w = to_dev(b, dev)
         loss = model.loss(detail, cond, w)

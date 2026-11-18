@@ -114,6 +114,11 @@ loss.
 - Known weakness: where the model misses a signal, the network adds no fine detail for it.
   The large-scale signal is kept but not sharpened.
 
+**Paired samples.** For a paired month the coefficients are spliced: degrees below the input
+degree from GRACE, degrees from the input degree upward from WaterGAP (`data.splice_coeffs`).
+The input is then exactly the blurred GRACE field, the detail above the input degree is
+WaterGAP's alone, and the target is consistent with the input.
+
 **Consistency projection.** Blurring an output back to the input degree must return the input.
 For every degree where the input taper is non-zero, the output's coefficients are replaced by
 input / taper; all finer degrees are free. This is an exact linear projection
@@ -301,11 +306,10 @@ on how much of WaterGAP's finest detail is believable.
 
 ## 8. What needs building
 
-- `data`: paired samples (input from one dataset, target from another, same month and
-  rotation); the new paired splits.
-- `train`: start from a checkpoint (fine-tuning); a fine-tuning learning rate.
-- `evaluate`: paired scoring (GRACE input, WaterGAP truth); steps spanning two octaves;
-  chaining two steps.
+Built for stage 1 (2026-11-18): paired samples and splits (`data.PairedSampler`), steps
+spanning two octaves (`8-32`), fine-tuning from a checkpoint (`train --init`), paired scoring
+and chaining of two steps (`evaluate --target`, `chain` checkpoints), and the run script
+`scripts/stage1.sh`. Still to build:
 - **Patch training for fine scales.** Whole-globe training at degree 128 does not fit the 32 GB
   card at a useful batch size (16 → 32 already used 29.6 GB at batch 32). Stage 2 needs
   training on cut-out patches, with care at the patch edges.

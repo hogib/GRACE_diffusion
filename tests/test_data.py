@@ -146,3 +146,63 @@ def test_land_only_zeroes_ocean(tmp_path):
     ocean = (glat[:, None] > 60) | (glat[:, None] < -60)   # far from the land block
     ocean = np.broadcast_to(ocean, g.shape)
     assert np.abs(g[ocean]).mean() < 0.15 * np.abs(sh.synth(c[0], 64)[ocean]).mean()
+
+
+# ---------------------------------------------------------------- steps and paired samples
+
+def test_parse_steps():
+    assert data.parse_steps("8,16") == ((8, 4), (16, 8))
+    assert data.parse_steps("8-32,32") == ((32, 8), (32, 16))
+    assert data.step_name((32, 8)) == "8-32" and data.step_name(16) == "16"
+
+
+def test_two_octave_step_is_consistent():
+    c = random_coeffs(32, seed=3)
+    s = data.make_sample(c, "2005-01", 32, None, Lin=8)
+    assert s.Lin == 8 and s.inp.shape == (1, 128, 256)
+    tgt = s.target[0].astype(np.float64) * s.scale
+    inp = s.inp[0].astype(np.float64) * s.scale
+    np.testing.assert_allclose(sh.project_consistent(inp, tgt, 8), tgt, atol=1e-3)
+    assert np.abs(sh.analyse(inp)[:, 8:]).max() < 1e-3                             # nothing from 8 up
+
+
+def test_splice_takes_input_below_and_target_above():
+    g, w = random_coeffs(20, seed=1), random_coeffs(40, seed=2)
+    c = data.splice_coeffs(g, w, 8, 16)
+    assert c.shape == (2, 17, 17)
+    np.testing.assert_array_equal(c[:, :8, :8], g[:, :8, :8])
+    np.testing.assert_array_equal(c[:, 8:, :], w[:, 8:17, :17])
+    np.testing.assert_allclose(sh.lowpass(c, 8), sh.lowpass(g[:, :17, :17], 8))   # input is blurred g
+    # the detail does not depend on the input dataset above the input degree
+    c2 = data.splice_coeffs(random_coeffs(20, seed=9), w, 8, 16)
+    d1, d2 = sh.lowpass(c, 16) - sh.lowpass(c, 8), sh.lowpass(c2, 16) - sh.lowpass(c2, 8)
+    np.testing.assert_allclose(d1[:, 8:], d2[:, 8:])
+
+
+def test_paired_sampler_matches_months_and_splits():
+    gm = [f"{y}-{m:02d}" for y in range(2002, 2021) for m in range(1, 13) if not (y == 2017 and m > 6)]
+    wm = [f"{y}-{m:02d}" for y in range(1990, 2020) for m in range(1, 13)]
+    rng = np.random.default_rng(0)
+    g = rng.normal(size=(len(gm), 2, 17, 17))
+    w = rng.normal(size=(len(wm), 2, 17, 17))
+    g[:, :, :2] = w[:, :, :2] = 0
+    tri = np.tril(np.ones((17, 17)))                       # orders m <= l only
+    g, w = g * tri, w * tri
+    g[:, 1, :, 0] = w[:, 1, :, 0] = 0                      # no sine term at order 0
+    kw = dict(rungs=(16,), tgt_months=wm, tgt_coeffs=w)
+    tr = data.PairedSampler(gm, g, "paired", "train", rotate="random", **kw)
+    va = data.PairedSampler(gm, g, "paired", "val", rotate="none", **kw)
+    te = data.PairedSampler(gm, g, "paired", "test", rotate="none", **kw)
+    assert max(tr.months[i] for i in tr.idx) == "2014-12"
+    assert [va.months[i] for i in va.idx][-1] == "2017-06"
+    assert [te.months[i] for i in te.idx][-1] == "2019-12"      # 2020 has no target
+    b = tr.batch(np.random.default_rng(1), 4)
+    assert b["inp"].shape == (4, 1, 64, 128) and b["Lin"] == 8
+    s = va.fixed_set(16)[0]                                     # 2015-01, unrotated
+    i, j = gm.index("2015-01"), wm.index("2015-01")
+    want_in = sh.synth(sh.lowpass(g[i].astype(np.float64), 8), 16)
+    np.testing.assert_allclose(s.inp[0] * s.scale, want_in, atol=1e-4)
+    want_d = sh.synth(sh.lowpass(w[j].astype(np.float64), 16), 16)
+    got_d = sh.analyse((s.target[0] - s.inp[0]).astype(np.float64) * s.scale)
+    np.testing.assert_allclose(got_d[:, 8:17, :17], sh.lowpass(w[j].astype(np.float64), 16)[:, 8:], atol=1e-3)
+    assert want_d.shape == s.target[0].shape

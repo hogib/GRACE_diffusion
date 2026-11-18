@@ -1,7 +1,9 @@
 """Score generators on a split (design doc §6, §7).
 
-A method is a callable (c, L, members, rng) -> ensemble of target-rung grids (M, 4L, 8L)
-in mm, where c is one month's (rotated) EWH coefficients. Scores are per month, on the
+A method is a callable (c, L, members, rng, Lin) -> ensemble of target grids (M, 4L, 8L)
+in mm, where c is one month's (rotated) EWH coefficients and Lin the input degree. With a
+target dataset (paired scoring, design doc §7.2), c is spliced: degrees below Lin from the
+input dataset, the rest from the target dataset. Scores are per month, on the
 added detail band, weighted by pixel area x region mask; results are written per month so
 that paired comparisons (block bootstrap over months) can be made later.
 """
@@ -16,7 +18,7 @@ import numpy as np
 
 from . import baselines, data, grids, metrics, prep, sh
 
-Method = Callable[[np.ndarray, int, int, np.random.Generator], np.ndarray]
+Method = Callable[[np.ndarray, int, int, np.random.Generator, int], np.ndarray]
 
 
 def region_weight(L: int, rot, region: str) -> np.ndarray:
@@ -32,13 +34,14 @@ def region_weight(L: int, rot, region: str) -> np.ndarray:
 
 
 def score_month(method: Method, c: np.ndarray, L: int, members: int, rng: np.random.Generator,
-                region: str, rot=None) -> dict[str, float]:
+                region: str, rot=None, Lin: int | None = None) -> dict[str, float]:
+    Lin = L // 2 if Lin is None else Lin
     cc = c[:, : L + 1, : L + 1].astype(np.float64)
     if rot is not None:
         cc = sh.rotate(cc, rot)
     truth = sh.synth(sh.lowpass(cc, L), L)
-    inp = sh.synth(sh.lowpass(cc, L // 2), L)
-    ens = method(cc, L, members, rng)
+    inp = sh.synth(sh.lowpass(cc, Lin), L)
+    ens = method(cc, L, members, rng, Lin)
     w = region_weight(L, rot, region)
     detail_t = truth - inp
     out = {"crps": metrics.crps_fair(ens, truth, w),
@@ -48,28 +51,37 @@ def score_month(method: Method, c: np.ndarray, L: int, members: int, rng: np.ran
     out["corr_mean_detail"] = metrics.correlation(ens.mean(0) - inp, detail_t, w) \
         if np.abs(ens.mean(0) - inp).max() > 0 else np.nan
     out["power_ratio"] = metrics.detail_power_ratio(ens, inp, truth, w)
-    out["consistency"] = metrics.consistency_rms(ens[:2], inp, L // 2)
+    out["consistency"] = metrics.consistency_rms(ens[:2], inp, Lin)
     return out
 
 
-def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: tuple[int, ...],
+def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: tuple,
         members: int, region: str, out_csv: Path, proc: Path = Path("data/proc"),
-        seed: int = 0, rotate: str = "none", max_months: int = 0) -> list[dict]:
+        seed: int = 0, rotate: str = "none", max_months: int = 0,
+        target: str | None = None) -> list[dict]:
+    """rungs: steps (L or (L, Lin)). target: dataset supplying the detail (paired scoring)."""
     months, coeffs = prep.load(proc, dataset)
+    tgt = None
+    if target:
+        months, i_in, i_tgt = data.paired_months(months, prep.load(proc, target)[0])
+        coeffs, tgt = coeffs[i_in], prep.load(proc, target)[1][i_tgt]
     idx = data.split_months(months, kind, split)
     if max_months:
         idx = idx[:max_months]
     rot = sh.rotation_to_equator(*grids.TEST_BOX.centre) if rotate == "test_box" else None
     rows = []
-    for L in rungs:
+    for L, Lin in (data.as_step(r) for r in rungs):
         for name, method in methods.items():
             t0 = time.time()
             for i in idx:
                 rng = np.random.default_rng([seed, L, int(i)])
-                r = score_month(method, coeffs[i], L, members, rng, region, rot)
-                rows.append({"dataset": dataset, "split": split, "L": L, "method": name,
+                c = coeffs[i] if tgt is None else data.splice_coeffs(coeffs[i], tgt[i], Lin, L)
+                r = score_month(method, c, L, members, rng, region, rot, Lin)
+                rows.append({"dataset": dataset if tgt is None else f"{dataset}>{target}",
+                             "split": split, "L": L, "Lin": Lin, "method": name,
                              "month": months[i], **r})
-            print(f"{dataset} L={L} {name}: {len(idx)} months in {time.time() - t0:.0f}s")
+            print(f"{dataset} L={data.step_name((L, Lin))} {name}: {len(idx)} months "
+                  f"in {time.time() - t0:.0f}s", flush=True)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     keys = list(rows[0].keys())
     for r in rows:
@@ -82,12 +94,12 @@ def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: 
 
 
 def summarise(rows: list[dict]) -> str:
-    """Mean over months per (dataset, L, method)."""
+    """Mean over months per (dataset, step, method)."""
     import collections
 
     groups = collections.defaultdict(list)
     for r in rows:
-        groups[(r["dataset"], r["L"], r["method"])].append(r)
+        groups[(r["dataset"], data.step_name((r["L"], r.get("Lin", r["L"] // 2))), r["method"])].append(r)
     cols = ["crps", "energy", "rmse_mean", "spread_error", "cov50", "cov90", "corr_mean_detail",
             "power_ratio", "consistency", "rms_truth_detail"]
     lines = ["dataset,L,method,n," + ",".join(cols)]
@@ -100,20 +112,23 @@ def summarise(rows: list[dict]) -> str:
 def baseline_methods(coeffs: np.ndarray, train_idx: np.ndarray, max_L: int) -> dict[str, Method]:
     clim = baselines.climatological_spectrum(coeffs, train_idx, max_L)
     return {
-        "input": lambda c, L, M, rng: baselines.input_only(c, L, 1),
-        "spectral-gauss": lambda c, L, M, rng: baselines.spectral_gauss(c, L, M, rng),
-        "spectral-gauss-clim": lambda c, L, M, rng: baselines.spectral_gauss(c, L, M, rng, spectrum=clim),
+        "input": lambda c, L, M, rng, Lin=None: baselines.input_only(c, L, 1, Lin=Lin),
+        "spectral-gauss": lambda c, L, M, rng, Lin=None: baselines.spectral_gauss(c, L, M, rng, Lin=Lin),
+        "spectral-gauss-clim": lambda c, L, M, rng, Lin=None: baselines.spectral_gauss(
+            c, L, M, rng, spectrum=clim, Lin=Lin),
     }
 
 
 def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
                  project: bool = True, chunk: int = 32, churn: float = 0.0,
-                 inflate: float | dict[int, float] = 1.0) -> Method:
+                 inflate: float | dict[int, float] = 1.0, chain: bool = False) -> Method:
     """A trained checkpoint as a Method: diffusion samples M members, regress returns 1.
 
     churn: stochastic sampler (see EDM.sample). inflate: stretch each member away from the
     ensemble mean by this factor (one value, or one per target degree L). The projection is
     linear and all members share the input's coarse degrees, so inflation keeps them exact.
+    chain: a step spanning several octaves (e.g. 8-32) is generated one octave at a time, each
+    member's output feeding the next step; otherwise it is generated in one pass.
     Members are generated in the normalised units of training (input / area RMS of input),
     rescaled to mm, and projected onto exact consistency with the input.
     """
@@ -125,24 +140,39 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
     dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model, cfg = load_checkpoint(ckpt, dev)
 
-    def method(c, L, M, rng):
-        inp = sh.synth(sh.lowpass(c, L // 2), L)
-        s = data.area_rms(inp, L) or 1.0
-        cond1 = torch.from_numpy((inp / s)[None, None].astype(np.float32)).to(dev)
-        if cfg["model"] == "regress":
+    def generate(inps, L, Lin, g):
+        """One ensemble member per input grid (m, 4L, 8L), in mm, consistent with its input."""
+        out = []
+        for k in range(0, len(inps), chunk):
+            part = inps[k: k + chunk]
+            s = np.array([data.area_rms(x, L) or 1.0 for x in part])
+            cond = torch.from_numpy((part / s[:, None, None])[:, None].astype(np.float32)).to(dev)
             with torch.no_grad():
-                det = model(cond1).double().cpu().numpy()[:, 0]
+                if cfg["model"] == "regress":
+                    det = model(cond)
+                else:
+                    det = model.sample(cond, steps=steps, generator=g, churn=churn)
+            det = det.double().cpu().numpy()[:, 0]
+            for x, sc, d in zip(part, s, det):
+                e = x + sc * d
+                out.append(sh.project_consistent(x, e, Lin) if project else e)
+        return np.stack(out)
+
+    def method(c, L, M, rng, Lin=None):
+        Lin = L // 2 if Lin is None else Lin
+        inp = sh.synth(sh.lowpass(c, Lin), L)
+        g = seeded_generator(dev, int(rng.integers(2**31)))
+        m = 1 if cfg["model"] == "regress" else M
+        if chain and L > 2 * Lin:
+            # one octave at a time: each member's output is the next step's input
+            Lk = 2 * Lin
+            ens = generate(np.repeat(sh.synth(sh.lowpass(c, Lin), Lk)[None], m, axis=0), Lk, Lin, g)
+            while Lk < L:
+                nxt = np.stack([sh.synth(sh.analyse(e), 2 * Lk) for e in ens])
+                ens = generate(nxt, 2 * Lk, Lk, g)
+                Lk *= 2
         else:
-            g = seeded_generator(dev, int(rng.integers(2**31)))
-            det = []
-            for k in range(0, M, chunk):
-                m = min(chunk, M - k)
-                det.append(model.sample(cond1.expand(m, -1, -1, -1).contiguous(), steps=steps,
-                                        generator=g, churn=churn).double().cpu().numpy()[:, 0])
-            det = np.concatenate(det)
-        ens = inp[None] + s * det
-        if project:
-            ens = np.stack([sh.project_consistent(inp, e, L // 2) for e in ens])
+            ens = generate(np.repeat(inp[None], m, axis=0), L, Lin, g)
         k = inflate.get(L, 1.0) if isinstance(inflate, dict) else inflate
         if k != 1.0 and len(ens) > 1:
             mean = ens.mean(0)
@@ -165,11 +195,15 @@ def main(argv=None):
     p.add_argument("dataset")
     p.add_argument("kind")
     p.add_argument("split")
-    p.add_argument("rungs")
+    p.add_argument("rungs", help="steps: '16,32' (one octave each) or '8-32' (input 8, target 32)")
+    p.add_argument("--target", default=None,
+                   help="dataset supplying the true detail (paired scoring); default: the dataset itself")
     p.add_argument("--members", type=int, default=16)
     p.add_argument("--out", required=True)
     p.add_argument("--baselines", action="store_true")
-    p.add_argument("--ckpt", action="append", default=[], help="name=path/to/best.pt")
+    p.add_argument("--ckpt", action="append", default=[],
+                   help="name=path/to/best.pt; a name starting with 'chain' generates steps "
+                        "spanning several octaves one octave at a time")
     p.add_argument("--region", default="val_land")
     p.add_argument("--rotate", default="none", choices=["none", "test_box"])
     p.add_argument("--steps", type=int, default=32)
@@ -179,17 +213,19 @@ def main(argv=None):
     p.add_argument("--max-months", type=int, default=0, help="score only the first N months")
     a = p.parse_args(argv)
     inflate = parse_inflate(a.inflate)
-    rungs = tuple(int(x) for x in a.rungs.split(","))
-    months, coeffs = prep.load(Path("data/proc"), a.dataset)
+    rungs = data.parse_steps(a.rungs)
+    # climatological spectrum: from the dataset that supplies the detail
+    months, coeffs = prep.load(Path("data/proc"), a.target or a.dataset)
     methods: dict[str, Method] = {}
     if a.baselines:
-        methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"), max(rungs)))
+        methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"),
+                                        max(L for L, _ in rungs)))
     for spec in a.ckpt:
         name, path = spec.split("=", 1)
         methods[name] = model_method(path, steps=a.steps, chunk=a.chunk, churn=a.churn,
-                                     inflate=inflate)
+                                     inflate=inflate, chain=name.startswith("chain"))
     rows = run(methods, a.dataset, a.kind, a.split, rungs, a.members, a.region, Path(a.out),
-               rotate=a.rotate, max_months=a.max_months)
+               rotate=a.rotate, max_months=a.max_months, target=a.target)
     print(summarise(rows))
 
 

@@ -48,14 +48,14 @@ def main():
         for ds in a.dataset.split(","):
             months, coeffs = prep.load(Path("data/proc"), ds)
             idx = data.split_months(months, a.kind, a.split)[:: a.stride][: a.months]
-            for L in (int(x) for x in a.rungs.split(",")):
+            for L, Lin in data.parse_steps(a.rungs):
                 w = evaluate.region_weight(L, None, a.region)
                 t0 = time.time()
                 for i in idx:
                     cc = coeffs[i][:, : L + 1, : L + 1].astype(np.float64)
                     truth = sh.synth(sh.lowpass(cc, L), L)
                     rng = np.random.default_rng([0, L, int(i)])
-                    ens = method(cc, L, a.members, rng)
+                    ens = method(cc, L, a.members, rng, Lin)
                     mean = ens.mean(0)
                     for k in KS:
                         e = mean[None] + k * (ens - mean[None])

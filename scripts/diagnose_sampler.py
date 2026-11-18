@@ -49,9 +49,9 @@ def main():
     diff, _ = load_checkpoint(a.diffusion, dev)
     reg = load_checkpoint(a.regress, dev)[0] if a.regress else None
     months, coeffs = prep.load(Path("data/proc"), a.dataset)
-    for L in (int(x) for x in a.rungs.split(",")):
-        val = data.Sampler(months, coeffs, a.kind, "val", rungs=(L,), rotate="none")
-        samples = val.fixed_set(L)[: a.max_months]
+    for L, Lin in data.parse_steps(a.rungs):
+        val = data.Sampler(months, coeffs, a.kind, "val", rungs=((L, Lin),), rotate="none")
+        samples = val.fixed_set((L, Lin))[: a.max_months]
         b = data.stack(samples)
         cond = torch.from_numpy(b["inp"]).to(dev)
         d = b["target"] - b["inp"]
