@@ -41,11 +41,11 @@ Reference without extras: 18.6 / 33.0 mm (2015–2017) and 22.6 / 29.8 mm (2020�
 
 | # | idea | source (as reported) | cost | status |
 |---|---|---|---|---|
-| C1 | **Model pattern, GRACE amplitude**: fit the models' patterns to GRACE in the band GRACE sees, reuse those amplitudes on the models' detail. Also a new baseline | Xiong 2026; Vishwakarma 2021; Mo 2025 | small, no training | next (baseline being run) |
+| C1 | **Model pattern, GRACE amplitude**: fit the models' patterns to GRACE in the band GRACE sees, reuse those amplitudes on the models' detail. Also a new baseline | Xiong 2026; Vishwakarma 2021; Mo 2025 | small, no training | done as a baseline: no gain over simple scaling (see F) |
 | C2 | **Structured spread**: perturb each member's GRACE input with GRACE's own coefficient errors; a spatially and temporally correlated residual model in place of one spread factor; rank histogram of basin averages; 1/2/3-sigma coverage table | Gou 2026 review; Gou & Soja 2024; Humphrey 2019 | moderate | open |
 | C3 | **Stacked lags before any temporal architecture** | Mo 2025; Mo 2022; Steidl 2026; Lu 2024 | — | this is A1 |
 | C4 | **Calibrate the validation tools at coarse scale**: run well and water-budget comparisons at 16 → 32, where GRACE's detail is known, to see whether they rank methods correctly | the agent's own suggestion | moderate: data | open |
-| C5 | **Weight the ten models** by their agreement with GRACE at coarse scales | Gou et al. 2025 | small | open |
+| C5 | **Weight the ten models** by their agreement with GRACE at coarse scales | Gou et al. 2025 | small | open. Hint from C1: JULES-ES does not co-vary with GRACE over most land |
 | C6 | **Precipitation and temperature as inputs**: reported to add little once a model TWS field is an input | Mandal 2025; Sun 2019 | moderate | low priority |
 
 ## D. Validation data named in the papers
@@ -84,4 +84,5 @@ Reference without extras: 18.6 / 33.0 mm (2015–2017) and 22.6 / 29.8 mm (2020�
 | Paired training towards WaterGAP's detail | dropped: worse against GRACE's own detail | Appendix B.5 |
 | Models' own detail for the month, added to GRACE | done: worse than the network alone | Appendix B.6 |
 | Mixing the network with the models' monthly detail | done: improves on the network (−2.2 / −1.0 mm) | Appendix B.6 |
+| Model pattern with a per-pixel amplitude fitted to GRACE (C1) | done: 23.0 / 41.0 mm, worse than one global scale per month (20.6 / 37.9) and than the network (18.6 / 33.0). Fitted gains are 0.7–1.1, not 2: GRACE's extra strength is mostly signal the models do not have, not the same pattern at twice the size. One model (JULES-ES) gets a gain of zero over most land | Appendix B.6 |
 | Same starting noise every month | done: members coherent in time at no cost; now the default | Appendix B.6 |

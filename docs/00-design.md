@@ -485,6 +485,14 @@ month-to-month change of the detail (mm) and correlation between consecutive mon
 Sharing the starting noise of each member across months restores realistic persistence at no
 cost in CRPS (22.1 against 22.7 and 28.9 against 29.9). It is now the default in `evaluate.run`.
 
+*Model pattern, GRACE amplitude* (`scripts/test_gain_baseline.py`, same 22 months): each
+model's detail for the month multiplied by a per-pixel gain fitted so that the model's blurred
+field matches GRACE's over 2002–2014. Ten-member ensemble: 23.0 and 41.0 mm (correlation 0.76
+and 0.55); with an additional global rescaling per month 21.0 and 38.7; one global scale alone
+20.6 and 37.9. The fitted gains have medians of 0.7–1.1 over land, so the models are not GRACE
+at half strength: GRACE's larger amplitude is mostly signal absent from the models. JULES-ES
+receives a gain of zero over most of the land.
+
 **Extra input channels** (`data.Extras`, `scripts/wall.sh`): previous months of the blurred
 field, the other models' detail for the month, the models' seasonal climatology of the detail,
 land mask and latitude can each be switched on per run (`train --extras`). GRACE-only input is
