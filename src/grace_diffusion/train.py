@@ -42,17 +42,23 @@ class BatchStream(torch.utils.data.IterableDataset):
 
 
 def to_dev(b, dev):
-    cond = b["inp"].to(dev, non_blocking=True)
-    detail = b["target"].to(dev, non_blocking=True) - cond
+    cond = b["inp"].to(dev, non_blocking=True)          # blurred field, then any extra channels
+    detail = b["target"].to(dev, non_blocking=True) - cond[:, :1]
     return detail, cond, b["weight"].to(dev, non_blocking=True)
 
 
-def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: str | None = None):
+def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: str | None = None,
+                  extras: data.Extras | None = None):
     """Train and validation samplers; `datasets` is one name or a comma-separated list.
 
     target: dataset supplying the detail (paired samples); the datasets then supply the input.
+    extras: extra input channels (data.Extras).
     """
     tr, va = [], []
+    bank = None
+    if extras is not None and extras.needs_bank:
+        bank = data.ModelBank.load(proc, max(L for L, _ in (data.as_step(r) for r in rungs)))
+    ex = dict(extras=extras, bank=bank)
     tm, tc = prep.load(Path(proc), target) if target else (None, None)
     for name in datasets.split(","):
         months, coeffs = prep.load(Path(proc), name)
@@ -61,7 +67,8 @@ def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: st
                 dst.append(data.PairedSampler(months, coeffs, kind, split, rungs=rungs, rotate=rot,
                                               tgt_months=tm, tgt_coeffs=tc))
             else:
-                dst.append(data.Sampler(months, coeffs, kind, split, rungs=rungs, rotate=rot))
+                dst.append(data.Sampler(months, coeffs, kind, split, rungs=rungs, rotate=rot,
+                                        name=name, **ex))
     if len(tr) == 1:
         return tr[0], va[0]
     return data.MultiSampler(tr), data.MultiSampler(va)
@@ -72,14 +79,14 @@ def estimate_sigma_data(sampler: data.Sampler | data.MultiSampler, n: int = 40, 
     num = den = 0.0
     for k in range(n):
         b = sampler.batch(np.random.default_rng([12345, k]), batch)
-        d = b["target"] - b["inp"]
+        d = b["target"] - b["inp"][:, :1]
         num += float((b["weight"] * d ** 2).sum())
         den += float(b["weight"].sum())
     return float(np.sqrt(num / den))
 
 
 def build(cfg: dict) -> torch.nn.Module:
-    net = UNet(in_ch=2, out_ch=1, base=cfg["base"], mults=tuple(cfg["mults"]),
+    net = UNet(in_ch=2 + cfg.get("extra_ch", 0), out_ch=1, base=cfg["base"], mults=tuple(cfg["mults"]),
                blocks=cfg["blocks"], dropout=cfg["dropout"])
     if cfg["model"] == "diffusion":
         return EDM(net, sigma_data=cfg["sigma_data"], p_mean=cfg.get("p_mean", -1.2),
@@ -118,6 +125,10 @@ def main(argv=None):
     p.add_argument("--init", default=None,
                    help="checkpoint to start from (fine-tuning); its network settings are kept")
     p.add_argument("--rungs", default="8,16", help="steps: '8,16', or '8-32' (input 8, target 32)")
+    p.add_argument("--extras", default="",
+                   help="extra input channels, e.g. 'hist:1,2,3,6,12+models+clim+land' (data.Extras)")
+    p.add_argument("--extras-drop", type=float, default=0.15,
+                   help="probability of zeroing each group of extra channels in training")
     p.add_argument("--model", choices=["diffusion", "regress"], default="diffusion")
     p.add_argument("--steps", type=int, default=60000)
     p.add_argument("--batch", type=int, default=32)
@@ -145,12 +156,13 @@ def main(argv=None):
     torch.manual_seed(a.seed)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rungs = data.parse_steps(a.rungs)
-    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target)
+    extras = data.parse_extras(a.extras, a.extras_drop)
+    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target, extras)
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
                blocks=a.blocks, dropout=a.dropout, rungs=a.rungs, dataset=a.dataset,
                target=a.target, kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean,
                p_std=a.p_std, sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch,
-               lr=a.lr, init=a.init)
+               lr=a.lr, init=a.init, extras=a.extras, extras_drop=a.extras_drop, extra_ch=extras.n)
     init = None
     if a.init:
         # fine-tuning: keep the network and its preconditioning scale; the model type must match
@@ -159,6 +171,8 @@ def main(argv=None):
             raise SystemExit(f"--init is a {init['cfg']['model']} checkpoint, --model is {a.model}")
         for k in ("base", "mults", "blocks", "dropout", "sigma_data"):
             cfg[k] = init["cfg"][k]
+        if init["cfg"].get("extra_ch", 0) != extras.n:
+            raise SystemExit("--init has a different number of extra input channels")
         cfg["sigma_data_here"] = estimate_sigma_data(train_s)
     else:
         cfg["sigma_data"] = estimate_sigma_data(train_s)

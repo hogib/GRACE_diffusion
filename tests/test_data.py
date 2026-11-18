@@ -206,3 +206,58 @@ def test_paired_sampler_matches_months_and_splits():
     got_d = sh.analyse((s.target[0] - s.inp[0]).astype(np.float64) * s.scale)
     np.testing.assert_allclose(got_d[:, 8:17, :17], sh.lowpass(w[j].astype(np.float64), 16)[:, 8:], atol=1e-3)
     assert want_d.shape == s.target[0].shape
+
+
+# ---------------------------------------------------------------- extra input channels
+
+def test_sh_rms_matches_grid_rms():
+    c = sh.lowpass(random_coeffs(16, seed=4), 16)
+    assert abs(data.sh_rms(c) - data.area_rms(sh.synth(c, 16), 16)) / data.sh_rms(c) < 0.02
+
+
+def test_parse_extras_and_month_shift():
+    ex = data.parse_extras("hist:1,12+models+land", 0.2)
+    assert ex.hist == (1, 12) and ex.models and ex.land and not ex.clim and ex.n == 4
+    assert data.parse_extras("").n == 0
+    assert data.month_shift("2003-01", 1) == "2002-12" and data.month_shift("2003-01", 12) == "2002-01"
+
+
+def _bank_and_series():
+    months = [f"{y}-{m:02d}" for y in range(1980, 1992) for m in range(1, 13)]
+    sets = {f"m{k}": (months, np.array([random_coeffs(16, seed=100 * k + i) for i in range(len(months))]))
+            for k in range(3)}
+    return months, sets, data.ModelBank(sets, 16, clim_years=("1980", "1989"))
+
+
+def test_extra_channels_history_models_clim_land():
+    months, sets, bank = _bank_and_series()
+    ex = data.parse_extras("hist:1,2+models+clim")
+    smp = data.Sampler(months, sets["m0"][1], "twin", "train", rungs=(16,), rotate="none",
+                       extras=ex, bank=bank, name="m0")
+    s = smp.sample(5, 16, None)
+    assert s.inp.shape == (5, 64, 128) and s.target.shape == (1, 64, 128)
+    # history channel 1 is last month's blurred field in the current input's units
+    want = sh.synth(sh.lowpass(sets["m0"][1][4].astype(np.float64), 8), 16) / s.scale
+    np.testing.assert_allclose(s.inp[1], want, atol=1e-4)
+    # the 'models' channel leaves the sample's own model out
+    own = data.Sampler(months, sets["m0"][1], "twin", "train", rungs=(16,), rotate="none",
+                       extras=ex, bank=bank, name="").sample(5, 16, None)
+    assert np.abs(own.inp[3] - s.inp[3]).max() > 1e-3
+    assert np.abs(s.inp[4]).max() > 0                           # climatology channel
+    # the first month has no history: zeros
+    first = smp.sample(0, 16, None)
+    assert np.all(first.inp[1] == 0) and np.all(first.inp[2] == 0)
+    # dropout zeroes whole groups in training batches
+    drop = data.Sampler(months, sets["m0"][1], "twin", "train", rungs=(16,), rotate="none",
+                        extras=data.parse_extras("hist:1+models", 1.0), bank=bank, name="m0")
+    b = drop.batch(np.random.default_rng(0), 2)
+    assert b["inp"].shape == (2, 3, 64, 128) and np.all(b["inp"][:, 1:] == 0)
+
+
+def test_extra_channels_rotate_with_the_field():
+    months, sets, bank = _bank_and_series()
+    ex = data.parse_extras("hist:1")
+    smp = data.Sampler(months, sets["m0"][1], "twin", "train", rungs=(16,), rotate="none", extras=ex)
+    rot = Rotation.from_euler("z", 90, degrees=True)
+    a, b = smp.sample(5, 16, None), smp.sample(5, 16, rot)
+    np.testing.assert_allclose(np.roll(a.inp[1], 32, axis=1), b.inp[1], atol=1e-4)   # 90 deg = 32 columns

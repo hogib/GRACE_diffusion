@@ -67,13 +67,14 @@ class EDM(nn.Module):
         i = torch.arange(steps, device=dev, dtype=torch.float64)
         t = (sigma_max ** (1 / rho) + i / (steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
         t = torch.cat([t, torch.zeros(1, device=dev, dtype=torch.float64)])
-        x = torch.randn(cond.shape, generator=generator, device=dev, dtype=torch.float64) * t[0]
+        shape = (cond.shape[0], 1, *cond.shape[2:])       # the detail has one channel
+        x = torch.randn(shape, generator=generator, device=dev, dtype=torch.float64) * t[0]
         gamma0 = min(churn / steps, 2 ** 0.5 - 1)
         for k in range(steps):
             tc, tn = t[k], t[k + 1]
             if gamma0 > 0 and s_tmin <= float(tc) <= s_tmax:
                 th = tc * (1 + gamma0)
-                eps = torch.randn(cond.shape, generator=generator, device=dev, dtype=torch.float64)
+                eps = torch.randn(shape, generator=generator, device=dev, dtype=torch.float64)
                 x = x + (th ** 2 - tc ** 2).sqrt() * s_noise * eps
                 tc = th
             sig = torch.full((cond.shape[0],), float(tc), device=dev)
@@ -96,7 +97,7 @@ class Regressor(nn.Module):
 
     def forward(self, cond: torch.Tensor) -> torch.Tensor:
         zero = torch.zeros(cond.shape[0], device=cond.device)
-        return self.net(torch.cat([torch.zeros_like(cond), cond], dim=1), zero)
+        return self.net(torch.cat([torch.zeros_like(cond[:, :1]), cond], dim=1), zero)
 
     def loss(self, detail, cond, weight):
         return (weight * (self(cond) - detail) ** 2).sum() / weight.sum()

@@ -68,3 +68,26 @@ def test_chained_generation_keeps_the_input(tmp_path):
         assert ens.shape == (2, 64, 128) and np.abs(ens[0] - ens[1]).max() > 0
         for e in ens:                                # degrees below 4 are the input's
             np.testing.assert_allclose(sh.project_consistent(inp, e, 4), e, atol=1e-6)
+
+
+def test_training_and_scoring_with_extra_channels(tmp_path, monkeypatch):
+    import numpy as np
+
+    from grace_diffusion import data, evaluate, prep, train
+    from tests.test_sh import random_coeffs
+    months = [f"{y}-{m:02d}" for y in range(1984, 1993) for m in range(1, 13)]
+    sets = {f"isimip_m{k}": (months, np.array([random_coeffs(8, seed=50 * k + i) for i in range(len(months))]))
+            for k in range(3)}
+    monkeypatch.setattr(prep, "load", lambda proc, name: sets[name])
+    bank = data.ModelBank(sets, 8, clim_years=("1984", "1989"))
+    monkeypatch.setattr(data.ModelBank, "load", classmethod(lambda cls, proc, lmax, pattern="": bank))
+    out = tmp_path / "x"
+    train.main(["--dataset", ",".join(sets), "--kind", "twin", "--rungs", "8", "--base", "8",
+                "--mults", "1,2", "--blocks", "1", "--batch", "2", "--workers", "0", "--val-every", "2",
+                "--steps", "2", "--sigma-max", "20", "--extras", "hist:1,2+models+clim+land",
+                "--out", str(out)])
+    monkeypatch.setattr(evaluate.grids, "land_mask", lambda L, rot, proc="": np.ones((4 * L, 8 * L), np.float32))
+    m = evaluate.model_method(out / "best.pt", device="cpu", steps=3)
+    rows = evaluate.run({"net": m}, "isimip_m0", "twin", "val", (8,), 2, "global", tmp_path / "s.csv",
+                        max_months=2)
+    assert len(rows) == 2 and all(r["consistency"] < 1e-6 for r in rows)

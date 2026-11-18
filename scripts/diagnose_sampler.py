@@ -54,7 +54,7 @@ def main():
         samples = val.fixed_set((L, Lin))[: a.max_months]
         b = data.stack(samples)
         cond = torch.from_numpy(b["inp"]).to(dev)
-        d = b["target"] - b["inp"]
+        d = b["target"] - b["inp"][:, :1]
         w = b["weight"]
         rows = []
         with torch.no_grad():
@@ -62,7 +62,7 @@ def main():
                 rows.append(("regress", reg(cond).cpu().numpy()))
             g = seeded_generator(dev, 0, L)
             for s in (80.0, 10.0, 2.0, 0.5):
-                x = torch.randn(cond.shape, generator=g, device=dev) * s
+                x = torch.randn((cond.shape[0], 1, *cond.shape[2:]), generator=g, device=dev) * s
                 sig = torch.full((cond.shape[0],), s, device=dev)
                 rows.append((f"D(sigma={s:g})", diff.denoise(x, sig, cond).cpu().numpy()))
         for S in (int(x) for x in a.steps.split(",")):

@@ -1,7 +1,8 @@
 """Score generators on a split (design doc §6, §7).
 
-A method is a callable (c, L, members, rng, Lin) -> ensemble of target grids (M, 4L, 8L)
-in mm, where c is one month's (rotated) EWH coefficients and Lin the input degree. With a
+A method is a callable (c, L, members, rng, Lin, ctx) -> ensemble of target grids (M, 4L, 8L)
+in mm, where c is one month's (rotated) EWH coefficients, Lin the input degree, and ctx what a
+network with extra input channels needs (month, dataset name, earlier months, rotation). With a
 target dataset (paired scoring, design doc Appendix B.5), c is spliced: degrees below Lin from the
 input dataset, the rest from the target dataset. Scores are per month, on the
 added detail band, weighted by pixel area x region mask; results are written per month so
@@ -34,14 +35,15 @@ def region_weight(L: int, rot, region: str) -> np.ndarray:
 
 
 def score_month(method: Method, c: np.ndarray, L: int, members: int, rng: np.random.Generator,
-                region: str, rot=None, Lin: int | None = None) -> dict[str, float]:
+                region: str, rot=None, Lin: int | None = None, ctx: dict | None = None) -> dict[str, float]:
     Lin = L // 2 if Lin is None else Lin
     cc = c[:, : L + 1, : L + 1].astype(np.float64)
     if rot is not None:
         cc = sh.rotate(cc, rot)
     truth = sh.synth(sh.lowpass(cc, L), L)
     inp = sh.synth(sh.lowpass(cc, Lin), L)
-    ens = method(cc, L, members, rng, Lin)
+    ens = method(cc, L, members, rng, Lin) if ctx is None else \
+        method(cc, L, members, rng, Lin, {**ctx, "rot": rot})
     w = region_weight(L, rot, region)
     detail_t = truth - inp
     out = {"crps": metrics.crps_fair(ens, truth, w),
@@ -66,6 +68,13 @@ def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: 
         months, i_in, i_tgt = data.paired_months(months, prep.load(proc, target)[0])
         coeffs, tgt = coeffs[i_in], prep.load(proc, target)[1][i_tgt]
     idx = data.split_months(months, kind, split)
+    pos = {m: j for j, m in enumerate(months)}
+
+    def prev_of(i):
+        def get(lag):
+            j = pos.get(data.month_shift(months[i], lag))
+            return None if j is None else coeffs[j]
+        return get
     if max_months:
         idx = idx[:max_months]
     rot = sh.rotation_to_equator(*grids.TEST_BOX.centre) if rotate == "test_box" else None
@@ -76,7 +85,9 @@ def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: 
             for i in idx:
                 rng = np.random.default_rng([seed, L, int(i)])
                 c = coeffs[i] if tgt is None else data.splice_coeffs(coeffs[i], tgt[i], Lin, L)
-                r = score_month(method, c, L, members, rng, region, rot, Lin)
+                ctx = {"month": months[i], "name": dataset, "prev": prev_of(i),
+                       "noise_seed": (seed, L, Lin)}
+                r = score_month(method, c, L, members, rng, region, rot, Lin, ctx)
                 rows.append({"dataset": dataset if tgt is None else f"{dataset}>{target}",
                              "split": split, "L": L, "Lin": Lin, "method": name,
                              "month": months[i], **r})
@@ -112,9 +123,10 @@ def summarise(rows: list[dict]) -> str:
 def baseline_methods(coeffs: np.ndarray, train_idx: np.ndarray, max_L: int) -> dict[str, Method]:
     clim = baselines.climatological_spectrum(coeffs, train_idx, max_L)
     return {
-        "input": lambda c, L, M, rng, Lin=None: baselines.input_only(c, L, 1, Lin=Lin),
-        "spectral-gauss": lambda c, L, M, rng, Lin=None: baselines.spectral_gauss(c, L, M, rng, Lin=Lin),
-        "spectral-gauss-clim": lambda c, L, M, rng, Lin=None: baselines.spectral_gauss(
+        "input": lambda c, L, M, rng, Lin=None, ctx=None: baselines.input_only(c, L, 1, Lin=Lin),
+        "spectral-gauss": lambda c, L, M, rng, Lin=None, ctx=None: baselines.spectral_gauss(
+            c, L, M, rng, Lin=Lin),
+        "spectral-gauss-clim": lambda c, L, M, rng, Lin=None, ctx=None: baselines.spectral_gauss(
             c, L, M, rng, spectrum=clim, Lin=Lin),
     }
 
@@ -139,14 +151,33 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
 
     dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model, cfg = load_checkpoint(ckpt, dev)
+    extras = data.parse_extras(cfg.get("extras", ""))
+    banks: dict = {}
 
-    def generate(inps, L, Lin, g):
+    def extra_channels(L, Lin, scale, ctx):
+        """Extra input channels (n, 4L, 8L) for one month, as in training but never dropped."""
+        if extras.n == 0:
+            return None
+        if ctx is None:
+            raise ValueError("this checkpoint has extra input channels; the caller must pass ctx")
+        bank = None
+        if extras.needs_bank:
+            if L not in banks:
+                banks[L] = data.ModelBank.load("data/proc", L)
+            bank = banks[L]
+        return np.stack(data.extra_grids(extras, L, Lin, ctx.get("rot"), scale, month=ctx["month"],
+                                         name=ctx.get("name", ""), prev=ctx.get("prev"), bank=bank))
+
+    def generate(inps, L, Lin, g, extra=None):
         """One ensemble member per input grid (m, 4L, 8L), in mm, consistent with its input."""
         out = []
         for k in range(0, len(inps), chunk):
             part = inps[k: k + chunk]
             s = np.array([data.area_rms(x, L) or 1.0 for x in part])
             cond = torch.from_numpy((part / s[:, None, None])[:, None].astype(np.float32)).to(dev)
+            if extra is not None:
+                e = torch.from_numpy(extra.astype(np.float32)).to(dev)
+                cond = torch.cat([cond, e[None].expand(len(part), -1, -1, -1)], dim=1)
             with torch.no_grad():
                 if cfg["model"] == "regress":
                     det = model(cond)
@@ -158,10 +189,18 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
                 out.append(sh.project_consistent(x, e, Lin) if project else e)
         return np.stack(out)
 
-    def method(c, L, M, rng, Lin=None):
+    def method(c, L, M, rng, Lin=None, ctx=None):
         Lin = L // 2 if Lin is None else Lin
         inp = sh.synth(sh.lowpass(c, Lin), L)
-        g = seeded_generator(dev, int(rng.integers(2**31)))
+        extra = extra_channels(L, Lin, data.area_rms(inp, L) or 1.0, ctx)
+        if extra is not None and chain and L > 2 * Lin:
+            raise NotImplementedError("chained generation with extra input channels")
+        # shared noise: member j starts from the same noise in every month, which keeps each
+        # member coherent in time (scripts/test_time_coherence.py); scores are unaffected
+        if ctx is not None and "noise_seed" in ctx:
+            g = seeded_generator(dev, *ctx["noise_seed"])
+        else:
+            g = seeded_generator(dev, int(rng.integers(2**31)))
         m = 1 if cfg["model"] == "regress" else M
         if chain and L > 2 * Lin:
             # one octave at a time: each member's output is the next step's input
@@ -172,7 +211,7 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
                 ens = generate(nxt, 2 * Lk, Lk, g)
                 Lk *= 2
         else:
-            ens = generate(np.repeat(inp[None], m, axis=0), L, Lin, g)
+            ens = generate(np.repeat(inp[None], m, axis=0), L, Lin, g, extra)
         k = inflate.get(L, 1.0) if isinstance(inflate, dict) else inflate
         if k != 1.0 and len(ens) > 1:
             mean = ens.mean(0)

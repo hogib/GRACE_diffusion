@@ -38,6 +38,148 @@ SPLITS = {
 Step = tuple[int, int]          # (target degree L, input degree Lin)
 
 
+# ------------------------------------------------------------------ extra input channels
+
+@dataclass(frozen=True)
+class Extras:
+    """Extra input channels next to the blurred field (all in the sample's rotated frame).
+
+    hist    lags in months: the blurred field of month t - lag, in the units of the current
+            input (so changes in amplitude are visible). Zero where that month is missing.
+    models  the hydrological models' detail for the same month: mean over the models (the other
+            models, when the sample itself is a model) of each model's detail divided by the
+            RMS of its own blurred field. One channel, dimensionless like the network's output.
+    clim    the same from each model's mean seasonal cycle (calendar-month means over the
+            training years minus the annual mean). Needs no model run for the month itself.
+    land    the land mask.
+    lat     sine of the geographic latitude (a plain indication of climate zone).
+    drop    in training, each group of channels is zeroed with this probability, so the network
+            also learns to work without it (missing months, months after the model runs end).
+    """
+    hist: tuple[int, ...] = ()
+    models: bool = False
+    clim: bool = False
+    land: bool = False
+    lat: bool = False
+    drop: float = 0.0
+
+    @property
+    def n(self) -> int:
+        return len(self.hist) + int(self.models) + int(self.clim) + int(self.land) + int(self.lat)
+
+    @property
+    def needs_bank(self) -> bool:
+        return self.models or self.clim
+
+
+def parse_extras(spec: str | None, drop: float = 0.0) -> Extras:
+    """'hist:1,2,3,6,12+models+land' -> Extras. Empty or None: no extra channels."""
+    kw: dict = {"drop": drop}
+    for tok in (spec or "").split("+"):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if tok.startswith("hist:"):
+            kw["hist"] = tuple(int(x) for x in tok[5:].split(","))
+        elif tok in ("models", "clim", "land", "lat"):
+            kw[tok] = True
+        else:
+            raise ValueError(f"unknown extra input '{tok}'")
+    return Extras(**kw)
+
+
+def month_shift(month: str, lag: int) -> str:
+    k = int(month[:4]) * 12 + int(month[5:7]) - 1 - lag
+    return f"{k // 12:04d}-{k % 12 + 1:02d}"
+
+
+def sh_rms(c: np.ndarray) -> float:
+    """Global RMS of a field from its (4-pi normalised) coefficients; rotation invariant."""
+    return float(np.sqrt((np.asarray(c, dtype=np.float64) ** 2).sum()))
+
+
+class ModelBank:
+    """The hydrological models' coefficients by month, for the 'models' and 'clim' channels."""
+
+    def __init__(self, sets: dict[str, tuple[list[str], np.ndarray]], lmax: int,
+                 clim_years: tuple[str, str] = ("1901", "1989")):
+        self.names = sorted(sets)
+        self.lmax = lmax
+        self.coeffs = {n: np.asarray(sets[n][1][:, :, : lmax + 1, : lmax + 1], dtype=np.float32)
+                       for n in self.names}
+        self.pos = {n: {m: j for j, m in enumerate(sets[n][0])} for n in self.names}
+        self.clim = {}
+        for n in self.names:
+            months = sets[n][0]
+            cm = np.zeros((12, 2, lmax + 1, lmax + 1))
+            for k in range(12):
+                sel = [j for j, m in enumerate(months)
+                       if int(m[5:7]) == k + 1 and clim_years[0] <= m[:4] <= clim_years[1]]
+                cm[k] = self.coeffs[n][sel].mean(0)
+            self.clim[n] = cm - cm.mean(0, keepdims=True)
+
+    @classmethod
+    def load(cls, proc, lmax: int, pattern: str = "isimip_*.npz") -> "ModelBank":
+        from pathlib import Path
+
+        from . import prep
+        names = sorted(f.stem for f in Path(proc).glob(pattern))
+        if not names:
+            raise FileNotFoundError(f"no {pattern} in {proc}")
+        return cls({n: prep.load(Path(proc), n) for n in names}, lmax)
+
+    def _mean_detail(self, fields: list[np.ndarray], Lin: int, L: int) -> np.ndarray | None:
+        acc, k = np.zeros((2, L + 1, L + 1)), 0
+        for c in fields:
+            c = c[:, : L + 1, : L + 1].astype(np.float64)
+            s = sh_rms(sh.lowpass(c, Lin))
+            if s > 0:
+                acc += (sh.lowpass(c, L) - sh.lowpass(c, Lin)) / s
+                k += 1
+        return acc / k if k else None
+
+    def month_detail(self, month: str, Lin: int, L: int, exclude: str = "") -> np.ndarray | None:
+        """Coefficients of the mean scaled detail of the models (but `exclude`) for a month."""
+        return self._mean_detail([self.coeffs[n][self.pos[n][month]] for n in self.names
+                                  if n != exclude and month in self.pos[n]], Lin, L)
+
+    def clim_detail(self, month: str, Lin: int, L: int, exclude: str = "") -> np.ndarray | None:
+        k = int(month[5:7]) - 1
+        return self._mean_detail([self.clim[n][k] for n in self.names if n != exclude], Lin, L)
+
+
+def extra_grids(ex: Extras, L: int, Lin: int, rot: Rotation | None, scale: float, *,
+                month: str, name: str = "", prev=None, bank: ModelBank | None = None,
+                rng: np.random.Generator | None = None) -> list[np.ndarray]:
+    """The extra channels of one sample, in the order hist, models, clim, land, lat.
+
+    prev(lag) returns the coefficients of month t - lag or None. scale is the RMS of the
+    current input. With rng (training), groups are dropped with probability ex.drop.
+    """
+    shape = sh.grid_shape(L)
+    keep = lambda: rng is None or ex.drop <= 0 or rng.random() >= ex.drop
+    turn = lambda c: c if rot is None else sh.rotate(c, rot)
+    out = []
+    if ex.hist:
+        on = keep()
+        for lag in ex.hist:
+            c = prev(lag) if (on and prev is not None) else None
+            if c is None:
+                out.append(np.zeros(shape))
+            else:
+                c = c[:, : L + 1, : L + 1].astype(np.float64)
+                out.append(sh.synth(sh.lowpass(turn(c), Lin), L) / scale)
+    for flag, fn in ((ex.models, "month_detail"), (ex.clim, "clim_detail")):
+        if flag:
+            c = getattr(bank, fn)(month, Lin, L, exclude=name) if keep() else None
+            out.append(np.zeros(shape) if c is None else sh.synth(turn(c), L))
+    if ex.land:
+        out.append(grids.land_mask(L, rot) if keep() else np.zeros(shape))
+    if ex.lat:
+        out.append(np.sin(np.radians(grids.rotated_coords(L, rot)[0])) if keep() else np.zeros(shape))
+    return out
+
+
 def as_step(x) -> Step:
     """16 -> (16, 8); (32, 8) stays."""
     if isinstance(x, (int, np.integer)):
@@ -71,7 +213,7 @@ def split_months(months: list[str], kind: str, split: str) -> np.ndarray:
 
 @dataclass
 class Sample:
-    inp: np.ndarray          # (1, H, W) normalised input
+    inp: np.ndarray          # (1 + extra channels, H, W): normalised input, then the extras
     target: np.ndarray       # (1, H, W) normalised target
     weight: np.ndarray       # (1, H, W) area weight x loss mask
     scale: float             # multiply by this to get EWH mm
@@ -104,7 +246,8 @@ def splice_coeffs(c_in: np.ndarray, c_tgt: np.ndarray, Lin: int, L: int) -> np.n
 
 def make_sample(c: np.ndarray, month: str, L: int, rot: Rotation | None, *,
                 hold_out_test_box: bool = True, mask_ice: bool = True,
-                flat: float = 0.8, Lin: int | None = None) -> Sample:
+                flat: float = 0.8, Lin: int | None = None, extra=None) -> Sample:
+    """extra: callable(scale) -> list of grids appended to the input as further channels."""
     Lin = L // 2 if Lin is None else Lin
     if c.shape[-1] - 1 < L:
         raise ValueError(f"coefficients only to degree {c.shape[-1] - 1}, rung needs {L}")
@@ -119,7 +262,8 @@ def make_sample(c: np.ndarray, month: str, L: int, rot: Rotation | None, *,
     wt = grids.area_weights(L) * grids.loss_mask(L, rot, hold_out_test_box, mask_ice)
     q = (rot or Rotation.identity()).as_quat()
     f32 = lambda a: a[None].astype(np.float32)
-    return Sample(f32(inp / s), f32(tgt / s), f32(wt), s, month, L, q, Lin)
+    inp_ch = np.stack([inp / s, *(extra(s) if extra else [])]).astype(np.float32)
+    return Sample(inp_ch, f32(tgt / s), f32(wt), s, month, L, q, Lin)
 
 
 def stack(samples: list[Sample]) -> dict[str, np.ndarray]:
@@ -152,10 +296,16 @@ class Sampler:
     rung_probs: tuple[float, ...] | None = None
     hold_out_test_box: bool = True
     mask_ice: bool = True
+    extras: Extras | None = None    # extra input channels
+    bank: ModelBank | None = None   # needed for the 'models' and 'clim' channels
+    name: str = ""                  # dataset name (a model is left out of its own 'models' channel)
     idx: np.ndarray = field(init=False)
 
     def __post_init__(self):
         self.rungs = tuple(as_step(r) for r in self.rungs)
+        self._pos = {m: j for j, m in enumerate(self.months)}
+        if self.extras is not None and self.extras.needs_bank and self.bank is None:
+            raise ValueError("extra inputs 'models'/'clim' need a ModelBank")
         self.idx = split_months(self.months, self.kind, self.split)
         if len(self.idx) == 0:
             raise ValueError(f"no months in {self.kind}/{self.split}")
@@ -174,16 +324,34 @@ class Sampler:
     def draw_step(self, rng: np.random.Generator) -> Step:
         return self.rungs[int(rng.choice(len(self.rungs), p=self.rung_probs))]
 
-    def sample(self, i: int, step, rot: Rotation | None) -> Sample:
-        """One sample: month index i of this dataset at a step, in a rotated frame."""
+    def prev(self, i: int):
+        """prev(lag) -> coefficients of the month `lag` months before month i, or None."""
+        def get(lag):
+            j = self._pos.get(month_shift(self.months[i], lag))
+            return None if j is None else self.coeffs[j]
+        return get
+
+    def extra(self, i: int, L: int, Lin: int, rot, rng=None):
+        if self.extras is None or self.extras.n == 0:
+            return None
+        return lambda scale: extra_grids(self.extras, L, Lin, rot, scale, month=self.months[i],
+                                         name=self.name, prev=self.prev(i), bank=self.bank, rng=rng)
+
+    def sample(self, i: int, step, rot: Rotation | None, rng=None) -> Sample:
+        """One sample: month index i of this dataset at a step, in a rotated frame.
+
+        rng: given in training, so that extra channels are dropped at random (Extras.drop).
+        """
         L, Lin = as_step(step)
         return make_sample(self.coeffs[i], self.months[i], L, rot, Lin=Lin,
-                           hold_out_test_box=self.hold_out_test_box, mask_ice=self.mask_ice)
+                           hold_out_test_box=self.hold_out_test_box, mask_ice=self.mask_ice,
+                           extra=self.extra(i, L, Lin, rot, rng))
 
     def batch(self, rng: np.random.Generator, batch_size: int, L=None) -> dict:
         step = self.draw_step(rng) if L is None else as_step(L)
         months = rng.choice(self.idx, size=batch_size, replace=True)
-        return stack([self.sample(i, step, self.rotation(rng)) for i in months])
+        drop = rng if self.split == "train" else None
+        return stack([self.sample(i, step, self.rotation(rng), drop) for i in months])
 
     def batches(self, seed: int, batch_size: int, n_batches: int):
         """Reproducible stream of batches: batch k uses rng seeded by (seed, k)."""
@@ -226,7 +394,9 @@ class PairedSampler(Sampler):
         self.tgt_coeffs = self.tgt_coeffs[i_tgt]
         super().__post_init__()
 
-    def sample(self, i: int, step, rot: Rotation | None) -> Sample:
+    def sample(self, i: int, step, rot: Rotation | None, rng=None) -> Sample:
+        if self.extras is not None and self.extras.n:
+            raise NotImplementedError("extra inputs with paired samples")
         L, Lin = as_step(step)
         c = splice_coeffs(self.coeffs[i], self.tgt_coeffs[i], Lin, L)
         return make_sample(c, self.months[i], L, rot, Lin=Lin,
@@ -256,7 +426,8 @@ class MultiSampler:
         samples = []
         for k in which:
             s = self.samplers[k]
-            samples.append(s.sample(rng.choice(s.idx), step, s.rotation(rng)))
+            samples.append(s.sample(rng.choice(s.idx), step, s.rotation(rng),
+                                    rng if s.split == "train" else None))
         return stack(samples)
 
     def batches(self, seed: int, batch_size: int, n_batches: int):

@@ -452,3 +452,40 @@ Fine-tuned minus not fine-tuned: −6.0 [−6.5, −5.5] and −8.1 [−8.9, −
 32 and 33 mm. Paired training teaches the network to return WaterGAP's detail whatever GRACE
 shows, so the product moves towards the model and away from the observations. Not run:
 WaterGAP-only pre-training, the one-step variant, the direct network.
+
+**B.6 Tests without training** (2026-11-18). Ten-model network (`runs/isimip10-r23`),
+land-only GRACE DDK5, against GRACE's own detail.
+
+*The models' own detail for the month* (`scripts/test_model_month_detail.py`, 22 months
+2015-01 to 2017-06): GRACE's blurred field completed with each model's detail for that month,
+as a ten-member ensemble.
+
+| method | R2 CRPS | R3 CRPS | corr. |
+|---|---|---|---|
+| spectral baseline | 30.0 | 40.1 | 0.15 / 0.29 |
+| ten models' detail for the month | 21.5 | 38.7 | 0.73 / 0.53 |
+| the same, scaled to the GRACE input | 20.6 | 37.9 | 0.75 / 0.53 |
+| network (GRACE-only input) | 18.6 | 33.0 | 0.79 / 0.65 |
+
+*Mixing* (`scripts/test_mixing.py`, same months): network ensemble mean replaced by
+a·(network mean) + b·(ten-model mean detail), weights cross-fitted over two halves. CRPS 16.5
+and 32.0, i.e. −2.2 [−2.4, −1.9] and −1.0 [−1.2, −0.9] against the network alone; weights about
+(0.7, 0.55) at R2 and (0.95, 0.35) at R3. The models' monthly fields are worse than the network
+alone but complementary to it, less so at the finer step.
+
+*Coherence in time* (`scripts/test_time_coherence.py`, 36 months 2020–2022, 8 members): RMS
+month-to-month change of the detail (mm) and correlation between consecutive months.
+
+| | R2 change | R2 corr. | R3 change | R3 corr. |
+|---|---|---|---|---|
+| GRACE's own detail | 21.6 | 0.94 | 24.5 | 0.94 |
+| members, fresh noise each month | 47.4 | 0.65 | 60.8 | 0.53 |
+| members, the same noise every month | 23.6 | 0.91 | 19.9 | 0.95 |
+
+Sharing the starting noise of each member across months restores realistic persistence at no
+cost in CRPS (22.1 against 22.7 and 28.9 against 29.9). It is now the default in `evaluate.run`.
+
+**Extra input channels** (`data.Extras`, `scripts/wall.sh`): previous months of the blurred
+field, the other models' detail for the month, the models' seasonal climatology of the detail,
+land mask and latitude can each be switched on per run (`train --extras`). GRACE-only input is
+no longer a fixed decision (2026-11-18); these variants are tested at the coarse steps first.
