@@ -27,7 +27,7 @@
 \newcommand{\code}[1]{\texttt{#1}}
 
 \title{Downscaling GRACE/GRACE-FO water storage with a conditional diffusion model trained
-  on paired GRACE and WaterGAP fields: a proposal}
+  on hydrological models: a proposal}
 \author{H. Oğuz Bolat}
 \date{Proposal, draft for discussion\\[2pt] 18 November 2026}
 
@@ -37,19 +37,21 @@
 \begin{abstract}
 \noindent
 We propose a method for adding spatial detail to GRACE and GRACE-FO terrestrial water storage
-(TWS) fields below the resolution of the observations. A conditional diffusion model receives
-a GRACE field limited to spherical-harmonic degree 32 and generates the detail between degrees
-32 and 128 (half-wavelengths from about 600\,km to 160\,km) as an ensemble. The detail is
-learned from the WaterGAP hydrological model: the network is first trained on WaterGAP alone
-and then fine-tuned on months for which both GRACE and WaterGAP are available, with GRACE as
-input and WaterGAP's detail as target. The loss acts on the generated detail only, and a
-consistency projection fixes all coarser coefficients to their GRACE values, so that the
-observed large-scale field is preserved exactly. The proposal follows from two earlier
-experiments, which showed that such detail cannot be inferred from coarser scales of GRACE
-itself, and that a network trained on model fields alone performs well on GRACE but is
-limited by the mismatch between model and observed inputs. We describe the method, the data,
-a four-level evaluation ending with independent data over Türkiye, a staged experimental
-plan, and the risks we have identified, and we list the points on which a decision is needed.
+(TWS) fields below the resolution of the observations. A conditional diffusion model is
+trained on global hydrological models to restore the fine detail of a model field from its
+coarse part, and is then applied to GRACE fields limited to spherical-harmonic degree 32, for
+which it generates the detail between degrees 32 and 128 (half-wavelengths from about 600\,km
+to 160\,km) as an ensemble. A consistency projection fixes all coarser coefficients to their
+GRACE values, so that the observed large-scale field is preserved exactly. The proposal rests
+on three experiments. Detail cannot be inferred from coarser scales of GRACE itself. A network
+trained on ten hydrological models and applied to GRACE improves on a spectral baseline by
+7--11\,mm in the continuous ranked probability score at scales where GRACE can serve as
+reference, though with ensembles that are somewhat too narrow. Training the network instead to
+reproduce the detail of one model for the same month as the GRACE input improves the agreement
+with that model but worsens the agreement with the detail GRACE observes, and is therefore not
+pursued. We describe the method, the evidence, an evaluation in five levels ending with
+independent data over Türkiye, the further work, and the limits of what can be claimed for
+scales that GRACE does not resolve.
 \end{abstract}
 
 \section{Motivation}
@@ -60,27 +62,32 @@ recovered from the observations themselves. A generative model conditioned on th
 field can supply it as an ensemble of realisations that agree with the observation at the
 scales it resolves, the ensemble spread expressing the uncertainty of what is added.
 
-Two earlier experiments, documented in the progress report of 18 November 2026, determine
-the form of the present proposal. In the first, a network was trained to add one octave of
-spherical-harmonic detail at coarse scales, where GRACE resolves both input and target, and
-was then applied one octave finer. It was the best method at its training scale but worse than
-a spectral baseline one octave finer, on GRACE and on a hydrological model alike, whereas a
-network trained at the finer scale itself performed well. Fine detail must therefore be learned
-from examples at the scale concerned, which GRACE cannot provide below its resolution.
+The central difficulty is the source of training examples, since no observations exist at the
+scales to be generated. We have examined three sources (Table~\ref{tab:sources}); the first is
+documented in the progress report of 18 November 2026 and the other two in
+Section~\ref{sec:evidence}. Only the second gave detail that agrees with what GRACE observes
+at scales where the comparison is possible, and it is the basis of this proposal.
 
-In the second experiment the examples were taken from hydrological models: a network was
-trained on ten ISIMIP3a models, with the model field limited to a coarse degree as input and
-the model's own finer detail as target, and was then applied to GRACE. At scales where GRACE
-can serve as reference (degrees 8 to 16 and 16 to 32), it improved on the spectral baseline by
-7--10\,mm in the continuous ranked probability score (CRPS) and reproduced a substantial part
-of the observed detail. Its ensembles were, however, too narrow, and remained so after
-calibration unless the calibration used GRACE itself, which is not possible at the target
-scales. We attribute this to a mismatch of inputs: the network was trained on model fields
-limited to a coarse degree and then received GRACE fields, which it had never seen and which
-differ from model fields at large scales.
-
-The method proposed here removes this mismatch by placing GRACE on the input side during
-training.
+\begin{table}[ht]
+\centering\small
+\caption{Sources of training examples examined so far.}
+\label{tab:sources}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.33\linewidth}L}
+  \toprule
+  source of the examples & outcome \\
+  \midrule
+  Coarser scales of GRACE itself, applied one octave finer &
+    Not viable: the relation between a field and its next finer octave changes with scale, on
+    GRACE and on model data alike. \\
+  Hydrological models alone; the network is then applied to GRACE &
+    Viable: improves on the baselines against GRACE's own detail; ensemble spread too
+    narrow. \\
+  One model's detail for the same month as the GRACE input (paired training) &
+    Not viable: reproduces the model, and agrees less well with GRACE's own detail than the
+    second source. \\
+  \bottomrule
+\end{tabularx}
+\end{table}
 
 \section{Proposed method}\label{sec:method}
 
@@ -88,83 +95,71 @@ training.
 For a single month, the input is the GRACE TWS field limited to degree $L_\mathrm{in} = 32$,
 and the output is an ensemble of fields limited to degree $L = 128$
 (Figure~\ref{fig:bands}). Fields are limited with a cosine taper $w_L(l)$, equal to 1 up to
-degree $0.8L$ and falling to 0 at degree $L$. No auxiliary inputs such as precipitation,
-temperature or topography are used, so that the result depends on GRACE and on the learned
-statistical relation only. Months are treated independently.
+degree $0.8L$ and falling to 0 at degree $L$. The detail to be generated is the difference
+between the field limited to $L$ and the field limited to $L_\mathrm{in}$. No auxiliary
+inputs such as precipitation, temperature or topography are used, and months are treated
+independently.
 
 \begin{figure}[ht]
   \centering
   \includegraphics[width=0.72\linewidth]{figures/bands.pdf}
   \caption{Origin of the spectral content of the product. Degrees below 32 are taken from GRACE
   and are not altered; degrees from 32 to 128 are generated by the network, which learns them
-  from WaterGAP.}
+  from hydrological models.}
   \label{fig:bands}
 \end{figure}
 
-\subsection{Training target and loss}
-The detail is learned from WaterGAP v2.2e. For a month with GRACE coefficients $g_{lm}$ and
-WaterGAP coefficients $h_{lm}$, a combined set of coefficients is formed,
-\begin{equation}
-  c_{lm} =
-  \begin{cases}
-    g_{lm}, & l < L_\mathrm{in},\\
-    h_{lm}, & l \ge L_\mathrm{in},
-  \end{cases}
-\end{equation}
-from which the input $x_\mathrm{in} = w_{L_\mathrm{in}} c$ and the target
-$x = w_L c$ are computed. The input is then exactly the GRACE field limited to
-$L_\mathrm{in}$, and the detail $d = x - x_\mathrm{in}$ contains WaterGAP's signal at all
-degrees from $L_\mathrm{in}$ upward. (It also contains the part of GRACE that the taper
-removes between $0.8L_\mathrm{in}$ and $L_\mathrm{in}$, which is known from the input and is
-restored exactly by the projection described below.) The network generates $d$, and the loss compares the
-generated with the true detail. The coarse part of the field does not enter the loss.
+\subsection{Training on hydrological models}
+The network is trained on hydrological-model fields only. A model field $x$ is limited to
+$L_\mathrm{in}$ to form the input, and the network learns to generate the detail
+$d = w_L x - w_{L_\mathrm{in}} x$ of that same field. Input and target thus always belong to
+the same field, and what the network learns is a statistical relation: the fine detail that
+accompanies a given large-scale field. Ten models driven by a common forcing are used jointly,
+each training sample being drawn from a randomly chosen model, so that the relation reflects
+what the models have in common and the ensemble spread reflects, in part, where they differ.
+In the experiments reported below, training on ten models gave better agreement with GRACE
+than training on a single model.
 
-This choice is deliberate. A loss on the complete field would reward the network for moving
-GRACE's large-scale field towards the model, for instance by weakening a groundwater depletion
-signal that GRACE observes and the model underestimates. With a loss on the detail, the product
-is GRACE made sharper with model-like detail, not a hydrological model adjusted by GRACE.
-
-\subsection{Consistency with the observation}
-After generation, every coefficient of degree below $L_\mathrm{in}$ is replaced by its GRACE
+\subsection{Application to GRACE}
+At application the network receives the GRACE field limited to $L_\mathrm{in}$ and generates
+detail for it. Every coefficient of degree below $L_\mathrm{in}$ is then replaced by its GRACE
 value, recovered from the input as $x^{\mathrm{in}}_{lm} / w_{L_\mathrm{in}}(l)$. This is an
-exact linear projection that leaves the true target unchanged. Limiting any output back to
-degree $L_\mathrm{in}$ returns the input to numerical precision (of order $10^{-15}$\,mm in
-our implementation), so GRACE alone determines the coarse part of the product.
+exact linear projection: limiting any output back to degree $L_\mathrm{in}$ returns the input
+to numerical precision (of order $10^{-15}$\,mm in our implementation). GRACE alone therefore
+determines the coarse part of the product, and the models contribute only a statistical
+relation, not their own state for the month in question. A large-scale signal that GRACE
+observes and the models underestimate, such as groundwater depletion, is retained in full, and
+the detail added to it is scaled to the observed field.
 
 \subsection{Generative model}
-The network is the U-Net used in the earlier experiments (16.3 million parameters, without
-attention, with padding that respects the periodicity in longitude and the continuity across
-the poles). Fields are represented on global equiangular grids of $4L \times 8L$ points, each
-map is divided by the area-weighted root mean square of its input, and each training sample is
-rotated by a random rotation of the sphere, applied identically to input and target.
+The network is a U-Net with 16.3 million parameters, without attention, with padding that
+respects the periodicity in longitude and the continuity across the poles. Fields are
+represented on global equiangular grids of $4L \times 8L$ points, each map is divided by the
+area-weighted root mean square of its input, and each training sample is rotated by a random
+rotation of the sphere.
 
 The diffusion model follows the EDM formulation, with the training noise distribution widened
 relative to its default ($\ln\sigma \sim \mathcal N(-0.4, 1.6^2)$, $\sigma_\mathrm{max} = 20$);
-the earlier experiments showed the default to be unsuitable for this problem. Samples are
-drawn with the stochastic second-order sampler in 32 steps, which in our calibration tests
-improved both accuracy and ensemble spread over the deterministic sampler. The ensemble mean
-serves as the single best estimate.
+with the default, the network did not learn to use its input at high noise levels. Samples
+are drawn with the stochastic second-order sampler in 32 steps. The ensemble mean serves as
+the single best estimate. A direct network with the same architecture, trained with a weighted
+squared error to predict the detail in one pass, serves as a baseline that yields the
+conditional mean without uncertainty.
 
-A direct network with the same architecture, trained with a weighted squared error to predict
-the detail in one pass, is trained alongside as a baseline. It yields the conditional mean
-without uncertainty and shows what the diffusion formulation contributes.
-
-\subsection{Training in two phases}
-Months with both GRACE and WaterGAP are available only from April 2002 to December 2019,
-which is a small sample for training a network of this size. Training therefore proceeds in
-two phases. In the first, the network is trained on WaterGAP alone for 1901--1989 (validated
-on 1990--2001), with the WaterGAP field limited to $L_\mathrm{in}$ as input and WaterGAP's
-detail as target; here it learns the fine-scale structure of the model from more than a
-thousand months. In the second, training continues on the paired months, with GRACE as input
-and WaterGAP's detail as target, so that the network adapts to observed inputs. Training on
-the paired months alone, and training on both kinds of sample simultaneously, are retained as
-alternatives.
+\subsection{Calibration of the ensemble spread}\label{sec:calib}
+The ensembles obtained so far are too narrow when the network is applied to GRACE
+(Section~\ref{sec:g1}). The spread can be widened without altering the coarse coefficients by
+scaling each member's deviation from the ensemble mean by a factor $k$. At the target scales
+$k$ cannot be fitted on GRACE. We propose to fit it on hydrological models withheld from
+training, and to enlarge it by the additional margin that GRACE requires relative to the
+models at the scales where both can be assessed. In the tests so far the model-fitted factors
+were 1.1 and 1.0 and the GRACE-fitted factors 1.2 and 1.2 at degrees 8 to 16 and 16 to 32, a
+margin of 10--20\%. That this margin carries over to finer scales is an assumption, and is
+stated as such.
 
 \subsection{Resolution}
-The target is degree 128. Whether it is better reached in one step (32 to 128) or in two
-single-octave steps (32 to 64 and 64 to 128) will be decided by experiment
-(Section~\ref{sec:plan}). In the two-step variant only the first step receives GRACE directly;
-the second is fine-tuned on the output of the first.
+The target is degree 128. It may be reached in one step (32 to 128) or in two single-octave
+steps (32 to 64 and 64 to 128); the choice will be made by experiment on model data.
 
 \section{Data}
 
@@ -174,170 +169,226 @@ solutions (260 months from April 2002 to September 2026), with $C_{20}$ and $C_{
 by the TN-14 values, glacial isostatic adjustment removed with the model of Caron et~al.\
 (2018), and anomalies taken relative to 2004--2009 and expressed as equivalent water height;
 degrees 0 and 1 are excluded. Both an unfiltered and a DDK5-filtered version are available.
-Since WaterGAP contains no ocean signal and does not represent the ice sheets, the GRACE fields
-are set to zero over the ocean, Greenland and Antarctica before use, so that input and target
-share a domain.
+Since the hydrological models contain no ocean signal and do not represent the ice sheets, the
+GRACE fields are set to zero over the ocean, Greenland and Antarctica before use. GRACE is
+never used for training in the proposed method, so all months are available for evaluation;
+the months from 2023 onward have not been examined and are reserved for the final test.
 
-\subsection{WaterGAP}
-The target is monthly TWS from WaterGAP v2.2e (GSWP3-W5E5 forcing, historical human water
-use) for 1901--2019 at $0.5^\circ$, expanded to degree 128. Cells whose storage drifts by more
-than 1\,m over the simulation (unbounded snow accumulation on glaciers and point-like urban
-groundwater abstraction, about 2600 cells) are set to zero anomaly. Anomalies are referred to
-2004--2009 as for GRACE.
+\subsection{Hydrological models}
+The training data are monthly TWS fields of ten models of the ISIMIP3a global water sector
+(CWatM, H08, HydroPy, JULES-ES, JULES-W2, LPJmL, MIROC-INTEG-LAND, ORCHIDEE-MICT, WaterGAP2-2e
+and WEB-DHM-SG), all driven by the GSWP3-W5E5 forcing with historical human water use, for
+1901--2019 at $0.5^\circ$, expanded to degree 128. Cells whose storage drifts by more than
+1\,m over the simulation (unbounded snow accumulation on glaciers and point-like urban
+groundwater abstraction) are set to zero anomaly. The years 1901--1989 are used for training,
+1990--2001 for validation, and 2002--2019 are reserved.
 
 \subsection{Data used for comparison}
 The GLWS2.0 data set (Gerdener et~al.\ 2023), obtained by assimilating GRACE and GRACE-FO into
 WaterGAP, is the existing product closest in purpose to ours and will serve as a benchmark.
-Because it is derived from the same two sources, agreement with it is in part expected by
-construction, and we do not regard it as an independent validation. The comparison will be
-made at a common resolution, with GLWS limited to our target degree.
+Because it is derived from GRACE and from one of the models used here, agreement with it is
+in part expected by construction, and we do not regard it as an independent validation.
 
-Nine further ISIMIP3a models (CWatM, H08, HydroPy, JULES-ES, JULES-W2, LPJmL, MIROC-INTEG-LAND,
-ORCHIDEE-MICT and WEB-DHM-SG), prepared in the same way as WaterGAP, are retained for
-comparison but are not used as training targets.
-
-\subsection{Masks and data splits}
+\subsection{Masks}
 A region over Türkiye (30--45$^\circ$N, 20--50$^\circ$E), enlarged by one half-wavelength of
 the target degree, is excluded from all training and reserved for the final test. Greenland
 and Antarctica are excluded from the loss and the scores, and scores are computed over land.
-The data are divided into contiguous blocks of months (Table~\ref{tab:splits}). The gap
-between the GRACE and GRACE-FO missions separates the validation from the test period, which
-also shows whether the method carries over to GRACE-FO. GRACE-FO months after 2019 have no
-target and are the period to which the finished product is applied.
+
+\section{Evidence so far}\label{sec:evidence}
+
+All scores are the continuous ranked probability score (CRPS, in mm of equivalent water
+height; lower is better) over land, on months not used for training, with DDK5-filtered,
+land-only GRACE fields and ensembles of 32 members. Differences are given with 95\% intervals
+from a moving-block bootstrap over months. The spectral baseline adds random detail with a
+power-law spectrum extrapolated from the input.
+
+\subsection{Model-trained network at scales GRACE resolves}\label{sec:g1}
+The method was applied one and two octaves above the target scales, at degrees 8 to 16 and
+16 to 32, where the detail generated for a GRACE field can be compared with the detail GRACE
+observed. A network trained on the ten models improves on the spectral baseline by 9.9\,mm
+(interval 8.5 to 11.5) and 7.9\,mm (7.1 to 8.6) (Table~\ref{tab:g1}), and its ensemble mean
+correlates 0.73 and 0.64 with the observed detail, against 0.17 and 0.29 for the baseline. A
+network trained on WaterGAP alone scored 28.0\,mm at degrees 8 to 16, against 24.0\,mm for the
+ten models. A network trained on GRACE itself at these scales, which is not available at the
+target scales, reaches 13.7 and 21.8\,mm; the difference measures what is lost through the
+disagreement between models and observations.
+
+The ensembles are too narrow, with a ratio of spread to error of about 0.65. The stochastic
+sampler raises the ratio and also improves the score. Scaling the spread with a factor fitted
+on GRACE months outside the validation period brings the ratio to 0.87--0.89, within the range
+of 0.85 to 1.15 that we regard as calibrated, whereas a factor fitted on the models alone
+leaves it at 0.72--0.81.
 
 \begin{table}[ht]
 \centering\small
-\caption{Data splits.}
-\label{tab:splits}
-\begin{tabular}{llll}
+\caption{Model-trained network applied to GRACE, scored against GRACE's own detail; 36 months,
+2020--2022.}
+\label{tab:g1}
+\begin{tabular}{lrrrr}
   \toprule
-  data & use & period & months \\
+  & \multicolumn{2}{c}{degrees 8 to 16} & \multicolumn{2}{c}{degrees 16 to 32} \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  method & CRPS & spread/error & CRPS & spread/error \\
   \midrule
-  WaterGAP alone & first training phase & 1901--1989 & 1068 \\
-  WaterGAP alone & validation of the first phase & 1990--2001 & 144 \\
-  GRACE and WaterGAP & second training phase & 2002-04 to 2014-12 & 140 \\
-  GRACE and WaterGAP & validation & 2015-01 to 2017-06 & 22 \\
-  GRACE-FO and WaterGAP & test & 2018-06 to 2019-12 & 17 \\
+  input without detail & 45.8 & --- & 50.7 & --- \\
+  spectral baseline & 33.8 & 0.74 & 38.1 & 0.75 \\
+  model-trained, deterministic sampler & 24.0 & 0.66 & 30.3 & 0.64 \\
+  model-trained, stochastic sampler & 22.6 & 0.74 & 29.8 & 0.72 \\
+  \quad with spread factor fitted on models & 22.3 & 0.81 & 29.8 & 0.72 \\
+  \quad with spread factor fitted on GRACE & 22.1 & 0.89 & 29.3 & 0.87 \\
+  \midrule
+  trained on GRACE (upper bound) & 13.7 & 0.71 & 21.8 & 0.81 \\
   \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Evaluation}\label{sec:eval}
-
-The principal score is the CRPS, computed with the fair ensemble estimator; it rewards both
-accuracy and appropriate spread. We further report the root mean square error and the
-correlation of the ensemble mean, the ratio of ensemble spread to ensemble-mean error (1 for a
-calibrated ensemble), and the coverage of the central 50\% and 90\% ensemble intervals. Methods
-are compared through per-month CRPS differences with intervals from a moving-block bootstrap.
-The reference methods are the input without added detail, a spectral baseline that adds random
-detail with a power-law spectrum extrapolated from the input, its variant with the mean
-spectrum of the training months, and the direct network.
-
-The evaluation has four levels of increasing strength.
-
-The first level scores the generated detail against WaterGAP's detail on the held-out paired
-months. It establishes that the network has learned its task and that its spread is calibrated
-with respect to the model, but not that the detail is real.
-
-The second level repeats the complete procedure at coarser scales (degrees 8 to 16 and 16 to
-32), where GRACE resolves the detail, and scores the output against the detail GRACE actually
-observed. This is the only global test against observations. It measures how closely
-WaterGAP-like detail, added to a GRACE field, resembles reality at scales where this can be
-checked.
-
-The third level compares the product with GLWS2.0 at the target scales and reports where the
-two agree and where they differ, without a criterion of success.
-
-The fourth level compares the product over the Türkiye test region with data that involve
-neither GRACE nor WaterGAP, such as groundwater levels, GNSS loading displacements or basin
-water budgets. It is the only test of the generated detail against independent observations,
-and the data for it remain to be identified.
-
-For the first and second levels, the method is regarded as successful if it improves on the
-baselines and on the direct network in CRPS, with a bootstrap interval excluding zero, and has
-a spread-to-error ratio between 0.85 and 1.15. For the fourth level, the product should agree
-with the independent data more closely than GRACE at its native resolution, and preferably at
-least as closely as WaterGAP and GLWS2.0. The test months and the test region will not be used
-until the design is fixed.
-
-\section{Experimental plan}\label{sec:plan}
-
-The work is arranged in three stages, so that the design is tested where it is inexpensive
-before the costly runs are made.
-
-Stage 1 applies the method at coarse scales (degrees 8 to 32), on grids that the available
-workstation handles within hours and where the second evaluation level is available. Its
-variants (Table~\ref{tab:stage1}) answer whether the paired fine-tuning improves on the
-earlier model-only training, whether one step or two is preferable, whether the first training
-phase is needed, and whether the diffusion model improves on the direct network. The code for
-this stage has been written and tested, and the first runs are in progress.
+\subsection{Paired training as an alternative}\label{sec:paired}
+To remove the disagreement between model inputs in training and GRACE inputs in application,
+we tested a design in which GRACE is the input during training. For each month from 2002 to
+2019, the coefficients below $L_\mathrm{in}$ were taken from GRACE and those from
+$L_\mathrm{in}$ upward from WaterGAP, so that the network learned to generate WaterGAP's
+detail for a GRACE input. The model-trained network was fine-tuned on these pairs (140 months,
+2002--2014), and a second network was trained on the pairs alone. Both were scored on 22
+held-out months (January 2015 to June 2017) in two ways: against WaterGAP's detail, which was
+the training target, and against GRACE's own detail (Table~\ref{tab:paired}).
 
 \begin{table}[ht]
 \centering\small
-\caption{Variants of stage 1, all scored at levels one and two of Section~\ref{sec:eval}.}
-\label{tab:stage1}
-\begin{tabularx}{0.92\linewidth}{lLL}
+\caption{Paired training, 22 held-out months. Left: against WaterGAP's detail; the baseline
+uses WaterGAP's mean spectrum. Right: against GRACE's own detail, with the correlation of the
+ensemble mean with that detail; the baseline extrapolates the spectrum of the input.}
+\label{tab:paired}
+\begin{tabular}{lrrrrrr}
   \toprule
-  & variant & question \\
+  & \multicolumn{2}{c}{against WaterGAP} & \multicolumn{4}{c}{against GRACE} \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-7}
+  & 8 to 16 & 16 to 32 & \multicolumn{2}{c}{8 to 16} & \multicolumn{2}{c}{16 to 32} \\
+  method & CRPS & CRPS & CRPS & corr. & CRPS & corr. \\
   \midrule
-  A & first phase only (trained on model fields) & reference: the earlier approach \\
-  B & both phases, two steps (8 to 16, 16 to 32) & does the paired phase help? \\
-  C & both phases, one step (8 to 32) & one step or two? \\
-  D & paired months only & is the first phase needed? \\
-  E & direct network, trained as B & does the diffusion model help? \\
+  input without detail & 21.5 & 19.5 & 40.2 & --- & 53.0 & --- \\
+  spectral baseline & 16.4 & 14.9 & 30.0 & 0.15 & 40.1 & 0.29 \\
+  model-trained (as proposed) & 18.0 & 20.9 & 18.6 & 0.79 & 33.0 & 0.65 \\
+  model-trained, then fine-tuned on pairs & 12.0 & 12.8 & 23.3 & 0.72 & 38.0 & 0.57 \\
+  trained on pairs only & 12.8 & 13.5 & 25.5 & 0.68 & 39.4 & 0.57 \\
   \bottomrule
-\end{tabularx}
+\end{tabular}
 \end{table}
 
-Stage 2 takes the best variant to the target scales (degrees 32 to 128) and evaluates it at
-levels one and three. Global grids at degree 128 do not fit the memory of the workstation
-(32\,GB) at a useful batch size, so this stage requires training on sub-regions of the grid,
-which has yet to be implemented.
+Fine-tuning achieved its immediate aim: against WaterGAP's detail the score improved by
+6.0\,mm (5.5 to 6.5) and 8.1\,mm (6.7 to 8.9). Against the detail GRACE observed, however, it
+worsened by 4.6\,mm (3.5 to 5.5) and 5.0\,mm (3.7 to 5.6). The fine-tuned network generates
+52\% and 39\% of the detail power present in GRACE, its ensemble mean correlates less well
+with the observed detail, and its spread is about half of its error (0.48 at both steps,
+against 0.77 and 0.72 for the model-trained network on the same months).
 
-Stage 3 is the comparison with independent data over Türkiye (level four), followed by the
-application to the GRACE-FO months after 2019.
+The explanation lies in the training pairs. In model-only training, input and target belong
+to the same field, and the network learns a relation that it then applies to whatever
+large-scale field it is given. In paired training, the input is GRACE and the target is the
+state of one model for that month. Where the two disagree, the network learns to return the
+model's detail irrespective of what GRACE shows; over land, the detail of GRACE at these
+scales is about twice as strong as that of WaterGAP (root mean square 56 against 32\,mm at
+degrees 8 to 16, and 77 against 33\,mm at degrees 16 to 32, in the held-out months). The paired design therefore moves
+the product towards the model and away from the observations at the only scales where the two
+can be compared, and we have no grounds to expect otherwise at finer scales. We do not pursue
+it. The variants of this design that were not run (pre-training on WaterGAP alone, a single
+step over two octaves, the direct network) differ in training details and not in the target,
+which is the cause.
+
+\section{Evaluation}\label{sec:eval}
+
+Below degree 32 the product equals GRACE by construction. Above it, no global observation
+exists against which the generated detail could be scored, and this limitation is shared by
+any downscaled GRACE product. The evaluation therefore assembles evidence at five levels, none
+of which is sufficient alone.
+
+The first level scores the network on held-out years of the models it was trained on, at the
+target scales. It establishes that the task has been learned and gives an upper bound on the
+performance to be expected.
+
+The second level is the application to GRACE at the scales GRACE resolves, as in
+Section~\ref{sec:g1}. It is the only global test against observations, and it tests the
+method one and two octaves above the scales of interest.
+
+The third level withholds one hydrological model from training and scores the network on it
+at the target scales, for each of several models in turn. It shows whether the relation
+learned from some models holds for another, in accuracy and in spread, and so stands in for
+the test against observations that cannot be made. If the models did not agree on this
+relation at fine scales, the product could not be trusted there.
+
+The fourth level compares the product with GLWS2.0 at a common resolution and reports where
+the two agree and where they differ, without a criterion of success.
+
+The fifth level compares the product over the Türkiye test region with data that involve
+neither GRACE nor the hydrological models, such as groundwater levels, GNSS loading
+displacements or basin water budgets. It is the only test of the generated detail against
+independent observations at the target scales, and the data for it remain to be identified.
+
+For the first three levels the method is regarded as successful if it improves on the
+baselines and on the direct network in CRPS, with a bootstrap interval excluding zero, and has
+a spread-to-error ratio between 0.85 and 1.15. For the fifth level, the product should agree
+with the independent data more closely than GRACE at its native resolution, and preferably at
+least as closely as the hydrological models and GLWS2.0.
+
+The claim that can be supported at the end is correspondingly limited: that the product
+contains the fine detail which hydrological models associate with the large-scale field GRACE
+observes, with a stated uncertainty; that the method is verified against GRACE between about
+600 and 1250\,km; and that below 600\,km it agrees with independent observations over Türkiye
+to a stated degree.
+
+\section{Further work}\label{sec:plan}
+
+The second evaluation level is complete for DDK5-filtered and unfiltered GRACE. The remaining
+work is as follows.
+
+First, the networks for the target scales are trained on the ten models, in one step and in
+two, and evaluated at the first level. Global grids at degree 128 do not fit the memory of the
+available workstation (32\,GB) at a useful batch size, so this requires training on
+sub-regions of the grid, which has yet to be implemented.
+
+Second, the leave-one-model-out test is run at the target scales, and the spread factor of
+Section~\ref{sec:calib} is derived from it.
+
+Third, the product is generated for the GRACE and GRACE-FO record, compared with GLWS2.0, and
+evaluated against independent data over Türkiye.
+
+The direct network and the measures not yet implemented (a test for spurious stripe patterns
+and a two-sample test of generated against model detail) accompany the first step.
 
 \section{Risks and limitations}
 
-The fine-scale content of the product is that of WaterGAP. Where the model lacks a process or
-misplaces a signal, the generated detail inherits the deficiency, and where GRACE observes a
-large-scale signal that the model does not contain, the signal is preserved but not sharpened.
-The ensemble spread expresses the ambiguity of the detail given the GRACE field under the
-assumption that WaterGAP's fine-scale behaviour is correct; it does not include the model's
-own errors. In the earlier experiment, training on ten models gave better agreement with GRACE
-than training on WaterGAP alone (24.0 against 28.0\,mm at degrees 8 to 16), and the use of
-several models as targets may be reconsidered once the paired design is established.
+The fine-scale content of the product derives from hydrological models. Processes that all
+models lack or misrepresent, such as glacier mass change or irrigation, are absent from the
+generated detail or wrong in it, and agreement between models does not protect against a
+shared error. The ensemble spread reflects the ambiguity of the detail given the large-scale
+field and the differences between the models, not errors common to all of them.
 
-GRACE and WaterGAP differ in amplitude at scales where both carry signal. In a preliminary
-comparison over six validation months, the root mean square of GRACE's detail over land was
-two to three times that of WaterGAP's (60 against 31\,mm at degrees 8 to 16; 106 against 35\,mm at
-degrees 16 to 32; the GRACE fields in this comparison were not yet restricted to land and so
-include leakage from the ocean and the ice sheets). A network
-trained towards WaterGAP's detail will therefore add less variability than GRACE observes at
-these scales, which will count against it at the second evaluation level. How much of the
-difference is signal absent from the model (glaciers, groundwater trends), how much is
-leakage, and how much is observational noise is not yet known; stage 1 is designed to
-quantify its effect.
+The verification against GRACE is made above the target scales. Its transfer to finer scales
+is an assumption of the same kind as the one that failed in the first experiment, where a
+relation learned at one scale did not hold at the next. Here the network is trained at the
+target scales themselves, so no relation is carried across scales, but the agreement between
+models and reality at those scales is not thereby established; the third and fifth evaluation
+levels address it only indirectly and locally.
 
-The paired sample is small: 140 months for training, 22 for validation and 17 for testing.
-Random rotations multiply the training samples but not the hydrological situations they
-contain, so overfitting in the second phase is the principal technical risk, and the short
-validation and test periods will give wide confidence intervals.
+The disagreement between models and GRACE remains. It costs about 7 to 10\,mm relative to a
+network trained on GRACE at the scales where this can be measured, and it is the probable
+cause of the remaining deficit in ensemble spread. The proposed calibration compensates for it
+by an empirical margin and does not remove it.
 
-Finally, the comparison with GLWS2.0 cannot establish correctness, for the reason given above,
-and the strength of the final validation depends on independent data for Türkiye that have
-not yet been secured.
+The product is defined over land outside the ice sheets. The strength of the final validation
+depends on independent data for Türkiye that have not yet been secured, and the comparison
+with GLWS2.0 cannot establish correctness.
 
 \section{Points for decision}
 
 \begin{enumerate}
   \item Independent data for the Türkiye region (groundwater levels, GNSS loading, basin
-    water budgets, regional products) for the fourth evaluation level.
+    water budgets, regional products) for the fifth evaluation level.
+  \item The set of hydrological models and the forcing protocol (at present ten ISIMIP3a
+    models with GSWP3-W5E5).
   \item The GRACE product and filter used as input: ITSG with DDK5 filtering, or unfiltered.
   \item The target resolution: degree 128 (about 160\,km), or finer at a later stage.
-  \item WaterGAP as the sole training target, or several hydrological models.
-  \item The treatment of the amplitude difference between GRACE and WaterGAP, should stage 1
-    show it to be limiting.
+  \item Whether the limited claim formulated at the end of Section~\ref{sec:eval} is an
+    acceptable aim for the work.
 \end{enumerate}
 
 \end{document}

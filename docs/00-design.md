@@ -1,5 +1,12 @@
 # 00 — Design
 
+> **Status, 18 November 2026 (evening): the paired design described below was tested at coarse
+> scales and is not pursued.** Fine-tuning on paired GRACE–WaterGAP months improved the score
+> against WaterGAP's detail but worsened it against GRACE's own detail (Appendix B.5). The
+> current plan is model-only training on ten models, applied to GRACE, as written up in
+> `reports/proposal/proposal.pdf`. This document has not yet been rewritten to match; §3 (loss,
+> paired samples), §4 (target, splits) and §7 describe the superseded design.
+
 *Agreed 18 November 2026. This document replaces the two earlier designs (octave transfer;
 detail trained on models only), which remain in the git history. Their results are summarised
 in §1 and Appendix B, and written up in `reports/phase1/phase1_report.pdf`. Nothing in §3–§8
@@ -436,3 +443,22 @@ included) the model-trained network scored 41.0 against 48.7 at R3 and 44.3 agai
 
 On the models' own held-out years the network was also too narrow with the deterministic
 sampler (0.71 and 0.85) and close to calibrated with the stochastic one (0.93 and 0.98).
+
+**B.5 Paired design, short first pass** (`scripts/stage1_short.sh`, 2026-11-18). Land-only
+GRACE DDK5 in, WaterGAP detail as target; 22 validation months (2015-01 to 2017-06);
+stochastic sampler; 32 members. CRPS in mm.
+
+| method | vs WaterGAP R2 | vs WaterGAP R3 | vs GRACE R2 | vs GRACE R3 | spread/error vs GRACE | corr. vs GRACE |
+|---|---|---|---|---|---|---|
+| input | 21.5 | 19.5 | 40.2 | 53.0 | | |
+| spectral baseline (WaterGAP mean spectrum / input spectrum) | 16.4 | 14.9 | 30.0 | 40.1 | 0.83 / 0.85 | 0.15 / 0.29 |
+| ten-model network, not fine-tuned | 18.0 | 20.9 | 18.6 | 33.0 | 0.77 / 0.72 | 0.79 / 0.65 |
+| fine-tuned on paired months (10k steps, lr 5e-5) | 12.0 | 12.8 | 23.3 | 38.0 | 0.48 / 0.48 | 0.72 / 0.57 |
+| paired months only (30k steps) | 12.8 | 13.5 | 25.5 | 39.4 | 0.46 / 0.49 | 0.68 / 0.57 |
+
+Fine-tuned minus not fine-tuned: −6.0 [−6.5, −5.5] and −8.1 [−8.9, −6.7] against WaterGAP;
++4.6 [+3.5, +5.5] and +5.0 [+3.7, +5.6] against GRACE. The fine-tuned network generates 52% and
+39% of GRACE's detail power. Detail RMS over land in these months: GRACE 56 and 77 mm, WaterGAP
+32 and 33 mm. Paired training teaches the network to return WaterGAP's detail whatever GRACE
+shows, so the product moves towards the model and away from the observations. Not run:
+WaterGAP-only pre-training, the one-step variant, the direct network.
