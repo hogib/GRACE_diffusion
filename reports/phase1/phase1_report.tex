@@ -51,7 +51,7 @@ of the observations. In the second approach the network is trained on ten global
 models from ISIMIP3a and applied to GRACE, with a consistency projection that keeps GRACE's
 coarse coefficients exactly. At scales where GRACE can still be used as reference, this
 network improves on the spectral baseline by 7--10\,mm CRPS and recovers a substantial part of
-the observed detail (correlation 0.64--0.73), but its ensemble spread is about two thirds of
+the observed detail (correlation 0.62--0.73), but its ensemble spread is about two thirds of
 its error. Calibrating the spread is the next step, followed by tests at the target scales.
 \end{abstract}
 
@@ -279,7 +279,8 @@ Networks are trained on R1 and R2 of the GRACE DDK5 fields and evaluated on R2 (
 scale) and, without retraining, on R3, one octave finer. Before the experiment we specified
 that transfer would be accepted if the network, at R3, (a) improved on the spectral baseline,
 (b) came within 10\% of the CRPS of a network trained on R3 itself, and (c) had a spread/error
-ratio between 0.85 and 1.15 with coverage within 5 percentage points of nominal. The
+ratio between 0.85 and 1.15 with coverage within 5 percentage points of nominal. A further
+criterion, the absence of excess stripe power, has not been evaluated. The
 R3-trained network is not a candidate method, since such training data do not exist at the
 target scales; it measures how well R3 detail can be learned and hence the cost of transfer.
 The same experiment is repeated on the WaterGAP twin, where transfer can be followed to R4 and
@@ -288,7 +289,7 @@ R5.
 \subsection{Results on GRACE}\label{sec:p1diag}
 The first network, trained with the default noise schedule, appeared to transfer in part
 (Table~\ref{tab:p1}): at R3 it improved on the spectral baseline by 3.3\,mm (95\% interval
-$[-3.7, -2.9]$), and by 3.1\,mm on unfiltered GRACE, but it remained far from the R3-trained
+$[-3.7, -2.9]$), and by 3.0\,mm on unfiltered GRACE, but it remained far from the R3-trained
 network (45.5 against 24.8\,mm) and was over-confident (spread/error 0.82, coverage 40\% and
 82\%). At its training scale, however, it was clearly inferior to the regression U-Net (37.2
 against 26.3\,mm; ensemble-mean correlation 0.53 against 0.91), although the mean of a
@@ -331,9 +332,10 @@ barely learned to use its input in the regime where the sampler fixes the large-
 of the output. The validation loss, dominated by low-noise cases, did not reveal this.
 
 Retraining with the widened and log-uniform schedules (60\,000 steps) corrected the problem at
-the training scale. The denoiser correlation at $\sigma = 10$ rose to 0.84 (R1) and 0.91 (R2),
-the ensemble mean matched the regression U-Net (Figure~\ref{fig:diag}), and at R2 the diffusion
-model became the best method tested (20.5\,mm). One octave finer, however, both retrained
+the training scale. With the widened schedule, the denoiser correlation at $\sigma = 10$ rose
+to 0.84 (R1) and 0.91 (R2) and the ensemble-mean correlation to 0.81 and 0.91, close to the
+regression U-Net (Figure~\ref{fig:diag}); the log-uniform schedule gave similar values. At R2
+the diffusion model became the best method tested (20.5\,mm). One octave finer, however, both retrained
 networks are worse than the spectral baseline, with intervals excluding zero, and strongly
 over-confident: the widened-schedule network has a spread/error ratio of 0.37 and its 50\% and
 90\% intervals contain 21\% and 50\% of the truth. Their ensemble-mean correlation at R3 is
@@ -364,8 +366,8 @@ scale, the larger its loss one octave finer.
 \subsection{Results on the hydrological twin}
 On the twin, the network trained with the default schedule improved on the spectral baseline
 at every step from R2 to R5, but by a margin that decreased from 6.7\,mm at R2 to 0.8\,mm at
-R4 and R5 (Table~\ref{tab:twin}, Figure~\ref{fig:twin}). As on GRACE, this network had the
-weakness described above. Retrained with the widened schedule, it is far ahead at its training
+R4 and R5 (Table~\ref{tab:twin}, Figure~\ref{fig:twin}). This network was trained with the
+same default schedule as the first GRACE network. Retrained with the widened schedule, it is far ahead at its training
 scale (7.2 against 16.1\,mm, correlation 0.92) but ties with the spectral baseline at R3 and is
 worse at R4, with spread/error ratios of 0.48 and 0.43. Its ensemble mean at R3 still carries
 some structure (correlation 0.52 against 0.34 for the baseline, RMSE 25.9 against 28.3\,mm),
@@ -482,8 +484,8 @@ the paired difference between the model-trained network and the spectral baselin
 
 The model-trained network improves on the spectral baseline at both steps and for both GRACE
 versions, by 7--10\,mm with intervals well clear of zero (Table~\ref{tab:g1}). Its ensemble mean
-reproduces a substantial part of the observed detail, with correlations of 0.73 at R2 and 0.64
-at R3 against 0.17 and 0.29 for the baseline. Training on several models is beneficial: at R2 on
+reproduces a substantial part of the observed detail, with correlations on DDK5 of 0.73 at R2
+and 0.64 at R3 against 0.17 and 0.29 for the baseline (0.71 and 0.62 on unfiltered fields). Training on several models is beneficial: at R2 on
 land-only DDK5, the WaterGAP-only network of Part~I scores 28.0\,mm, the ten-model network
 24.0\,mm. On the full GRACE fields at R3, the model-trained network still improves on the
 spectral baseline (41.0 against 48.7\,mm; difference $-7.7$, interval $[-8.9, -6.6]$), which in
@@ -491,10 +493,10 @@ Part~I only the R3-trained network achieved. At R2 the improvement on full field
 ($-1.6$\,mm, interval $[-2.7, -0.8]$), as the detail there is dominated by ocean and ice-sheet
 signal that the models do not contain.
 
-Two shortcomings remain. The model-trained network is 8--10\,mm behind the GRACE-trained network,
+Two shortcomings remain. The model-trained network is 7--10\,mm behind the GRACE-trained network,
 a measure of the mismatch between models and observations; the gap is smaller than the gain over
 the baseline but not negligible. More importantly, its spread is too narrow: the spread/error
-ratio is 0.64--0.67 and the nominal 90\% interval contains 72--76\% of the truth. The
+ratio is 0.64--0.67 and the nominal 90\% interval contains 71--76\% of the truth. The
 GRACE-trained network is also somewhat over-confident (0.67--0.81), so the deficit is partly a
 property of the method and not of the mismatch alone. G1 is therefore met with respect to skill
 but not with respect to calibration.
