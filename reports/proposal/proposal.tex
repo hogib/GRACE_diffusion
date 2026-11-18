@@ -49,7 +49,11 @@ trained on ten hydrological models and applied to GRACE improves on a spectral b
 reference, though with ensembles that are somewhat too narrow. Training the network instead to
 reproduce the detail of one model for the same month as the GRACE input improves the agreement
 with that model but worsens the agreement with the detail GRACE observes, and is therefore not
-pursued. We describe the method, the evidence, an evaluation in five levels ending with
+pursued. The hydrological models' own fields for a month predict the observed detail less well
+than the network does, but improve it when combined with it, and reusing the initial noise of
+each ensemble member across months yields members that are coherent in time. Extensions of the
+network with further inputs are under test. We describe the method, the evidence, an
+evaluation in five levels ending with
 independent data over Türkiye, the further work, and the limits of what can be claimed for
 scales that GRACE does not resolve.
 \end{abstract}
@@ -96,9 +100,9 @@ For a single month, the input is the GRACE TWS field limited to degree $L_\mathr
 and the output is an ensemble of fields limited to degree $L = 128$
 (Figure~\ref{fig:bands}). Fields are limited with a cosine taper $w_L(l)$, equal to 1 up to
 degree $0.8L$ and falling to 0 at degree $L$. The detail to be generated is the difference
-between the field limited to $L$ and the field limited to $L_\mathrm{in}$. No auxiliary
-inputs such as precipitation, temperature or topography are used, and months are treated
-independently.
+between the field limited to $L$ and the field limited to $L_\mathrm{in}$. In its basic
+form the method uses no input other than the GRACE field of the month, and months are treated
+independently; extensions are described in Section~\ref{sec:ext}.
 
 \begin{figure}[ht]
   \centering
@@ -141,8 +145,9 @@ rotation of the sphere.
 The diffusion model follows the EDM formulation, with the training noise distribution widened
 relative to its default ($\ln\sigma \sim \mathcal N(-0.4, 1.6^2)$, $\sigma_\mathrm{max} = 20$);
 with the default, the network did not learn to use its input at high noise levels. Samples
-are drawn with the stochastic second-order sampler in 32 steps. The ensemble mean serves as
-the single best estimate. A direct network with the same architecture, trained with a weighted
+are drawn with the stochastic second-order sampler in 32 steps. Each ensemble member uses the
+same initial noise in every month, which makes its sequence of monthly fields coherent in time
+(Section~\ref{sec:time}). The ensemble mean serves as the single best estimate. A direct network with the same architecture, trained with a weighted
 squared error to predict the detail in one pass, serves as a baseline that yields the
 conditional mean without uncertainty.
 
@@ -160,6 +165,20 @@ stated as such.
 \subsection{Resolution}
 The target is degree 128. It may be reached in one step (32 to 128) or in two single-octave
 steps (32 to 64 and 64 to 128); the choice will be made by experiment on model data.
+
+\subsection{Extensions under test}\label{sec:ext}
+The basic form conditions on a single GRACE field. The results of Section~\ref{sec:month}
+indicate that further inputs can add information, and the network has been extended to accept
+additional input fields alongside the GRACE field. Five variants are being trained at the
+scales GRACE resolves and will be scored against GRACE's own detail: the GRACE field of earlier
+months (lags of 1, 2, 3, 6 and 12 months); the mean detail of the hydrological models for the
+same month, each model being excluded from its own input during training; the models' mean
+seasonal cycle of the detail, which unlike the previous input is available for any month; the
+land mask and the latitude; and all of these together. In training, each group of additional
+inputs is withheld at random in 15\% of the samples, so that the network remains usable when
+an input is missing. Results are not yet available. Inputs derived from model simulations of
+the month in question would restrict the product to the period covered by those simulations
+(to 2019 for the present data) and make it dependent on their meteorological forcing.
 
 \section{Data}
 
@@ -294,6 +313,85 @@ it. The variants of this design that were not run (pre-training on WaterGAP alon
 step over two octaves, the direct network) differ in training details and not in the target,
 which is the cause.
 
+\subsection{Information in the models' fields for the month}\label{sec:month}
+The hydrological models are driven by observed meteorology and so contain information about
+the month in question that a GRACE field limited to a coarse degree does not. To assess its
+value without training, the GRACE input was completed with each model's own detail for the same
+month, the ten completions forming an ensemble, and scored against GRACE's detail on the same
+22 months (Table~\ref{tab:month}).
+
+\begin{table}[ht]
+\centering\small
+\caption{The models' own detail for the month added to the GRACE input, against GRACE's own
+detail; 22 months, January 2015 to June 2017. Corr.: correlation of the ensemble mean with the
+observed detail.}
+\label{tab:month}
+\begin{tabular}{lrrrr}
+  \toprule
+  & \multicolumn{2}{c}{degrees 8 to 16} & \multicolumn{2}{c}{degrees 16 to 32} \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  method & CRPS & corr. & CRPS & corr. \\
+  \midrule
+  spectral baseline & 30.0 & 0.15 & 40.1 & 0.29 \\
+  models' detail for the month & 21.5 & 0.73 & 38.7 & 0.53 \\
+  \quad scaled to the GRACE input, one factor per month & 20.6 & 0.75 & 37.9 & 0.53 \\
+  \quad scaled per location, fitted on 2002--2014 & 23.0 & 0.76 & 41.0 & 0.55 \\
+  model-trained network (GRACE input only) & 18.6 & 0.79 & 33.0 & 0.65 \\
+  network combined with the models' detail & 16.5 & & 32.0 & \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+The models' detail for the month carries real information, with correlations of 0.73 and 0.53
+against 0.15 and 0.29 for the baseline, but it is inferior to the network, which sees only
+GRACE: by 1.9\,mm (0.6 to 2.6) and 4.9\,mm (1.8 to 6.6) for the better-scaled variant, the
+difference growing towards the finer step. The two sources are nevertheless complementary.
+When the ensemble mean of the network is replaced by a weighted sum of itself and the
+ten-model mean detail, with weights fitted on one half of the months and applied to the other,
+the score improves by 2.2\,mm (1.9 to 2.4) and 1.0\,mm (0.9 to 1.2), in 22 and 21 of the 22
+months. The weight of the model detail falls from about 0.55 at degrees 8 to 16 to about 0.35
+at degrees 16 to 32, so the benefit may be small at the target scales. This result motivates
+the second and third extensions of Section~\ref{sec:ext}.
+
+The scaling experiments also clarify the difference in amplitude between GRACE and the models.
+A gain fitted per location, such that the model field limited to the input degree matches the
+corresponding GRACE field over 2002--2014, has medians over land between 0.7 and 1.1 for nine
+of the ten models, and applying it does not improve the score. Where models and GRACE vary
+together they therefore do so with similar amplitude; the larger variance of GRACE's detail is
+mostly signal that the models do not contain, or observational noise, and cannot be supplied
+by rescaling the models. For one model, JULES-ES, the fitted gain is zero over most of the land
+area, which suggests that the models should not all be given equal weight.
+
+\subsection{Coherence in time}\label{sec:time}
+Since each month is generated independently, the detail of a given ensemble member need not
+evolve plausibly from month to month. With independent initial noise in each month, the detail
+of a member changes between consecutive months about two to two and a half times as much as
+the detail observed by GRACE (Table~\ref{tab:time}). Using the same initial noise for a member
+in every month brings both the size of the change and the correlation between consecutive
+months close to the observed values, and leaves the score unchanged within its uncertainty
+(22.1 against 22.7\,mm and 28.9 against 29.9\,mm, with eight members). No temporal model is
+required for this purpose; whether earlier months improve accuracy is tested by the first
+extension of Section~\ref{sec:ext}.
+
+\begin{table}[ht]
+\centering\small
+\caption{Month-to-month behaviour of the detail, 36 months, 2020--2022: root mean square change
+between consecutive months (mm) and correlation between consecutive months, for GRACE's own
+detail and for single ensemble members of the model-trained network.}
+\label{tab:time}
+\begin{tabular}{lrrrr}
+  \toprule
+  & \multicolumn{2}{c}{degrees 8 to 16} & \multicolumn{2}{c}{degrees 16 to 32} \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  & change & corr. & change & corr. \\
+  \midrule
+  GRACE's own detail & 21.6 & 0.94 & 24.5 & 0.94 \\
+  members, independent noise in each month & 47.4 & 0.65 & 60.8 & 0.53 \\
+  members, the same noise in every month & 23.6 & 0.91 & 19.9 & 0.95 \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
 \section{Evaluation}\label{sec:eval}
 
 Below degree 32 the product equals GRACE by construction. Above it, no global observation
@@ -337,8 +435,10 @@ to a stated degree.
 
 \section{Further work}\label{sec:plan}
 
-The second evaluation level is complete for DDK5-filtered and unfiltered GRACE. The remaining
-work is as follows.
+The second evaluation level is complete for DDK5-filtered and unfiltered GRACE in the basic
+form of the method, and the extensions of Section~\ref{sec:ext} are being trained and scored
+at that level. Their outcome decides which inputs the networks for the target scales receive.
+The remaining work is as follows.
 
 First, the networks for the target scales are trained on the ten models, in one step and in
 two, and evaluated at the first level. Global grids at degree 128 do not fit the memory of the
@@ -353,6 +453,15 @@ evaluated against independent data over Türkiye.
 
 The direct network and the measures not yet implemented (a test for spurious stripe patterns
 and a two-sample test of generated against model detail) accompany the first step.
+
+A further test against observations may be possible within the target band. Our analysis of
+the GRACE fields indicates that the DDK5-filtered solutions retain part of the signal between
+degrees 31 and 60, at a signal-to-noise ratio that is low but not negligible; this estimate
+is itself uncertain. Detail generated for degrees 32 to 64 could be passed through the same
+filter and compared with the filtered observations, which would provide a global comparison
+one octave below the present limit. The same degrees could later serve as noisy observations
+that constrain the generated detail directly. We propose to examine the first of these once
+the networks for degrees 32 to 64 exist.
 
 \section{Risks and limitations}
 
@@ -372,7 +481,9 @@ levels address it only indirectly and locally.
 The disagreement between models and GRACE remains. It costs about 7 to 10\,mm relative to a
 network trained on GRACE at the scales where this can be measured, and it is the probable
 cause of the remaining deficit in ensemble spread. The proposed calibration compensates for it
-by an empirical margin and does not remove it.
+by an empirical margin and does not remove it. The disagreement is not a matter of amplitude
+alone (Section~\ref{sec:month}): part of the variance observed by GRACE at these scales has no
+counterpart in the models, and a method that learns from the models cannot reproduce it.
 
 The product is defined over land outside the ice sheets. The strength of the final validation
 depends on independent data for Türkiye that have not yet been secured, and the comparison
@@ -387,6 +498,9 @@ with GLWS2.0 cannot establish correctness.
     models with GSWP3-W5E5).
   \item The GRACE product and filter used as input: ITSG with DDK5 filtering, or unfiltered.
   \item The target resolution: degree 128 (about 160\,km), or finer at a later stage.
+  \item Whether inputs other than GRACE are acceptable, in particular hydrological-model
+    fields for the month in question, which improve the agreement with GRACE at the scales
+    tested but tie the product to the period and the forcing of the simulations.
   \item Whether the limited claim formulated at the end of Section~\ref{sec:eval} is an
     acceptable aim for the work.
 \end{enumerate}
