@@ -1,330 +1,366 @@
 # 00 — Design
 
-grace-diffusion sharpens GRACE/GRACE-FO mass-change maps with a conditional
-diffusion model. Phase 1 asks one question before anything else is built:
-**does a model that learned to add one octave of spatial detail to GRACE also
-add the next octave correctly?** If it does, we try to go below what GRACE
-resolves (Phase 2). If it does not, we have learned that cheaply.
+*Agreed 18 November 2026. This document replaces the two earlier designs (octave transfer;
+detail trained on models only), which remain in the git history. Their results are summarised
+in §1 and Appendix B, and written up in `reports/phase1/phase1_report.pdf`. Nothing in §3–§8
+that is marked "to build" exists yet.*
 
-This document is the plan agreed before implementation. Anything that changes
-it is recorded here first. The literature behind it is in
-`survey/grace_diffusion_survey.pdf`. Data findings that shaped it are in
-Appendix A.
+**In one sentence:** the network takes a coarse GRACE/GRACE-FO map, adds fine detail learned
+from the WaterGAP hydrological model, and leaves GRACE's own large-scale picture untouched.
 
-Decided so far:
-- 2026-11-13 Spatial only. Each month is an independent map; no time
-  modelling in Phase 1.
-- 2026-11-13 GRACE only. The network sees only (blurred) GRACE, no hydrology
-  models or covariates.
-- 2026-11-13 Regional test on Türkiye and its surroundings; box 30–45° N,
-  20–50° E (Türkiye, Tigris–Euphrates, Lake Urmia).
-- 2026-11-13 Octave transfer is the gate for going further; gate criteria
-  in §7.2.
-- 2026-11-13 Model: EDM-preconditioned 2D U-Net diffusion, as in imonet but 2D.
-- 2026-11-13 Data sources provisional: whatever GRACE series and hydrological
-  model we can obtain now, to be confirmed with the supervisor; swapping
-  sources must stay cheap. Current: ITSG-Grace2018 + ITSG-Grace_operational.
-- 2026-11-13 (after Appendix A) The ladder moves down one octave on GRACE:
-  train 4→8 and 8→16, gate on 16→32. GRACE has almost no clean signal above
-  degree ~40, so 32→64 and 64→128 are tested on the hydrological twin only.
-- 2026-11-13 (after Appendix A) Global images at rung-scaled resolution with
-  random rotations, instead of local patches: at low degrees a patch would
-  span half the planet.
-- 2026-11-13 The gate runs on two GRACE targets, unfiltered and DDK5-filtered,
-  and both are reported.
+The plan is recorded here before implementation; anything that changes it is recorded here
+first. The literature behind the project is in `survey/grace_diffusion_survey.pdf`. Data
+findings that shaped it are in Appendix A.
 
-## 1. Why this design
+## Decisions
 
-**Why generative.** Many fine-scale maps are consistent with one blurry map. A
-regression network returns their average, which is too smooth (survey §III).
-A diffusion model samples from them. The spread of the samples is the
-uncertainty of the added detail, and it can be checked for calibration. No
-published GRACE study reports calibrated, spatially coherent ensembles.
+| # | point | decision |
+|---|---|---|
+| 1 | input | GRACE only: one coarse map of a single month |
+| 2 | loss | on the fine detail only; the coarse part is fixed to GRACE |
+| 3 | target | WaterGAP v2.2e; GLWS2.0 is a benchmark; nine other models are a side check |
+| 4 | training | pre-train on WaterGAP alone, then fine-tune on paired GRACE–WaterGAP months |
+| 5 | model | conditional diffusion, with a direct (regression) network as baseline |
+| 6 | checks | split inside 2002–2019; four checks, from WaterGAP hold-out to independent data |
+| 7 | resolution | degree 128; one step or two decided by experiment |
 
-**Why octaves.** GRACE has no truth below its resolution, so detail there can
-never be scored against GRACE directly. Every learned product in the
-literature scores near-perfectly at GRACE scale because its loss forces it,
-and falls sharply against wells. Instead we test the assumption that
-generating finer detail rests on: that "adding the next octave" is a skill
-that transfers between scales. That can be tested with real GRACE between
-scales GRACE does resolve.
+Standing decisions from earlier work, still in force:
+- Spatial only: each month is an independent map, no time modelling.
+- Regional test on Türkiye and surroundings: box 30–45° N, 20–50° E, held out of all training.
+- Data sources are provisional until confirmed with the supervisor; swapping them must stay
+  cheap.
+- Whole-globe images on scale-matched grids with random rotations (§2).
 
-**Why GRACE only first.** Any detail the model adds then comes from what
-GRACE maps typically look like, not from a hydrological model's patterns. A
-later phase adds model inputs and measures how much they contribute. No
-published study separates the two.
+## 1. Background: what was tried, and why this design
 
-## 2. Scales and the octave ladder
+Two approaches were tested before this one. Numbers are CRPS in mm (lower is better), on
+validation months; details in Appendix B.
 
-A field on the sphere is a sum of spherical-harmonic degrees *l*. Degree *l*
-carries detail of half-wavelength ≈ 20,000 km / *l*.
+**Octave transfer (failed).** A network was trained to add one octave of detail at coarse
+scales, where GRACE resolves both input and target, and applied one octave finer.
+- At its training scale it was the best method (20.5 against 45.9 for the spectral baseline).
+- One octave finer it was worse than the baseline (52.5 against 48.7) and far too confident.
+- A network trained at the finer scale itself reached 24.8, so the detail is learnable there.
+- The same happened on WaterGAP, which has no GRACE noise or filtering.
 
-| rung | input → target degrees | finest detail | data | role |
+Conclusion: fine detail must be learned from examples at that scale. GRACE has none below its
+resolution; hydrological models do.
+
+**Detail trained on models only (partly worked).** A network was trained on ten ISIMIP3a
+models (blurred model in, model detail out) and then given real GRACE.
+- At scales GRACE can check, it beat the spectral baseline by 8–10 mm (24.0 against 33.8 at
+  8→16; 30.3 against 38.1 at 16→32, land-only GRACE).
+- Its spread was too narrow (spread/error about 0.65). A stochastic sampler and spread
+  inflation raised this to 0.87–0.89, but only with a factor fitted on GRACE. The factor fitted
+  on the models, which is the only one available at fine scales, gave 0.72–0.81.
+- It stayed 7–10 mm behind a network trained on GRACE itself.
+
+The remaining gap comes from a mismatch: the network trains on blurred *model* fields and is
+then handed *GRACE*, which it has never seen. The present design removes that mismatch by
+putting real GRACE on the input side during training (§7).
+
+**Method lessons carried over.**
+- EDM's default noise schedule was unsuitable here; the widened schedule is used (§3).
+- The denoiser diagnostic (`scripts/diagnose_sampler.py`) is run on every trained network.
+- The stochastic sampler improves both accuracy and spread and is now the default.
+
+## 2. Scales and grids
+
+**Blurring.** Degree l has a half-wavelength of about 20,000 km / l. A field is limited to
+degree L with a cosine taper w_L (1 up to 0.8 L, cosine roll-off to 0 at L), which avoids the
+ringing of a sharp cut.
+
+**Steps.** One step raises the resolution from an input degree to a target degree. The
+*detail* is the target-limited field minus the input-limited field.
+
+| step | degrees | finest half-wavelength | grid (lat × lon) | GRACE can check? |
 |---|---|---|---|---|
-| R1 | ≤ 4 → ≤ 8 | ~2,500 km | GRACE, twin | training |
-| R2 | ≤ 8 → ≤ 16 | ~1,250 km | GRACE, twin | training |
-| R3 | ≤ 16 → ≤ 32 | ~625 km | GRACE, twin | **gate** (held out from training) |
-| R4 | ≤ 32 → ≤ 64 | ~310 km | twin only | transfer check with truth |
-| R5 | ≤ 64 → ≤ 128 | ~160 km | twin only | the Phase 2 step, with truth |
+| R1 | 4 → 8 | ~2500 km | 32 × 64 | yes |
+| R2 | 8 → 16 | ~1250 km | 64 × 128 | yes |
+| R3 | 16 → 32 | ~625 km | 128 × 256 | yes |
+| R4 | 32 → 64 | ~310 km | 256 × 512 | no |
+| R5 | 64 → 128 | ~160 km | 512 × 1024 | no |
 
-**The gate:** train on R1 and R2 only, then evaluate on R3 without retraining.
-Compare against (a) a model trained on R3 itself, the "oracle", which shows
-how much transfer costs, and (b) the baselines in §5. On the twin, the same
-R1+R2 model is also evaluated on R4 and R5, i.e. two and three octaves
-beyond its training.
+GRACE has clean signal to about degree 40 (Appendix A), so it supplies degrees up to 32 and
+everything finer is generated. Steps may also span two octaves (8 → 32, 32 → 128); see §7.
 
-**Low-pass operator.** Hard truncation at degree *L* rings (Gibbs). We use a
-smooth taper in degree, w_L(l): 1 up to 0.8 L, a cosine roll-off to 0 at L
-(final form open, §10). The input taper w_{L/2} lies inside the flat part of
-w_L, so blurring a target to the input degree reproduces the input exactly.
+**Grids.** A field with target degree L is drawn on a global Driscoll–Healy grid of 4L × 8L
+points: four pixels per half-wavelength at every step. The network is fully convolutional, so
+one architecture serves every grid size.
 
-**Scale invariance by construction.** A CNN sees pixels, not kilometres. Each
-rung is synthesised on a global equiangular grid with p = 4 pixels per
-half-wavelength of its target degree L: 8L × 4L pixels (lon × lat). That is
-64×32 at R1, 128×64 at R2, 256×128 at R3, 512×256 at R4 and 1024×512 at R5.
-Features occupy the same number of pixels at every rung, and the globe gets
-larger in pixels as the rung rises. Amplitude falls with degree, so each map
-is normalised by the RMS of its input. The model predicts in those units and
-the result is scaled back (alternatives in §10).
+**Normalisation.** Each map is divided by the area-weighted RMS of its input; predictions are
+multiplied back.
 
-**Rotations.** Each training sample is a month's coefficients rotated by a
-random rotation of the sphere (exact in spherical harmonics), then
-synthesised. This turns about 180 training months into an effectively
-unlimited set of distinct images. It also spreads the equirectangular
-distortion and the poles over all features, and stops the model from
-memorising geography. At evaluation, the field is rotated so the test box sits
-on the equator, where distortion is smallest. Stripes are north–south in the
-original frame, so rotation also reorients the noise of the unfiltered target
-(open question, §10).
+**Rotations.** In training, each month is rotated by a random rotation of the sphere (exact in
+spherical harmonics) before it is drawn on the grid; masks rotate with it. This multiplies the
+training months, spreads grid distortion over all features, and prevents memorising geography.
+For paired samples (§7) the GRACE input and the WaterGAP target get the same rotation. Scoring
+uses unrotated fields.
 
-## 3. Problem
+## 3. Problem and model
 
-**Input:** the input-rung field w_{L/2} x of one (rotated) month on the
-rung's grid, normalised. Nothing else.
+**Input (decision 1).** The GRACE field of one month, limited to the input degree, on the
+step's grid, normalised. Nothing else: no precipitation, temperature or topography. Static
+topography and a land/water mask are a possible later addition.
 
-**Output:** samples of the target-rung field w_L x, as an ensemble.
+**Output.** An ensemble of fields at the target degree. The network generates only the detail;
+the input is added back.
 
-**Network:** a fully convolutional 2D U-Net with circular padding in
-longitude and reflection across the poles, EDM preconditioning and loss,
-Heun sampler. Fully convolutional, so the same weights run on every rung's
-grid size.
+**Loss on the detail only (decision 2).** The loss compares the generated detail with the
+target's detail, i.e. only the part finer than the input. The coarse part never enters the
+loss.
+- A whole-map loss would pull GRACE's large-scale picture towards the model, for example
+  weakening groundwater depletion that GRACE sees and the model misses.
+- Known weakness: where the model misses a signal, the network adds no fine detail for it.
+  The large-scale signal is kept but not sharpened.
 
-**Consistency (hard constraint).** Blurring a sample back to the input degree
-must return the input. The taper is not itself a projection (w² ≠ w in its
-roll-off), so the constraint is set per degree. Wherever w_{L/2}(l) > 0, the
-output's degree-l coefficients are fixed to input_l / w_{L/2}(l). That equals
-the true target's, because w_L = 1 there. All degrees with w_{L/2}(l) = 0 are
-generated freely. This is a projection (idempotent, true target is a fixed
-point), computed by spherical-harmonic analysis and synthesis on the grid,
-and exact on the sphere (cf. DDNM's range/null-space split;
-`sh.project_consistent`, tested in `tests/test_sh.py`). It is applied to the final sample, and
-optionally at every sampling step (§10). The remaining violation from
-discretisation is reported as a metric.
+**Consistency projection.** Blurring an output back to the input degree must return the input.
+For every degree where the input taper is non-zero, the output's coefficients are replaced by
+input / taper; all finer degrees are free. This is an exact linear projection
+(`sh.project_consistent`), applied to every final sample of every method. With GRACE as input,
+it guarantees that GRACE alone determines the coarse part of the product.
+
+**Network.** 2D U-Net, two input channels (noisy detail, input field), one output; base width
+64, multipliers (1, 2, 2, 4), two residual blocks per level, GroupNorm, SiLU, Fourier noise
+embedding, no attention; 16.3 M parameters. Padding wraps in longitude and reflects across the
+poles with a 180° shift.
+
+**Diffusion (decision 5).** EDM preconditioning and loss, pixel weights = cell area × loss
+mask.
+- Training noise: ln σ ~ N(−0.4, 1.6²) (the widened schedule), σ_max = 20.
+- Sampler: 32 Heun steps from σ_max to 0.002 (ρ = 7), stochastic (EDM Algorithm 2,
+  churn 20).
+- Ensemble members differ in their noise. The ensemble mean is the single best-estimate map.
+- Spread inflation about the ensemble mean (a factor per step) is available if needed; it keeps
+  the coarse degrees exact. Any factor is fitted on validation months, never on test months.
+
+**Direct network (baseline, decision 5).** The same U-Net trained with a weighted squared
+error to predict the detail in one pass. It gives the conditional mean: one smooth map, no
+uncertainty. It answers whether diffusion buys anything over a plain network.
+
+**What the spread means.** With one target model, the spread expresses how ambiguous the detail
+is given GRACE, assuming WaterGAP's fine-scale behaviour is right. It does not know about
+WaterGAP's own errors.
 
 ## 4. Data
 
-**GRACE/GRACE-FO.** ITSG-Grace2018 (Apr 2002 – Jun 2017, 162 months) and
-ITSG-Grace_operational (Jun 2018 – Sep 2026, 98 months): unconstrained
-monthly solutions to degree 120 with formal errors. Anomalies are taken
-relative to the 2004–2009 mean and converted to equivalent water height with
-PREM load Love numbers. Degrees 0 and 1 are dropped (not observed).
-Corrections (2026-11-13, provisional sources like the rest):
-- C20, and C30 where given, replaced by GSFC TN-14 SLR values (version of
-  3 Nov 2026, zero tide like ITSG). TN-14 rows follow JPL solution spans,
-  so each calendar month takes the row overlapping it most; all 260 months
-  are matched.
-- GIA removed with the Caron et al. (2018) expectation model (JPL VESL,
-  Stokes rates to degree 89; covariances also available). ICE-6G_D, the
-  more common choice, was unreachable.
-Check (Gaussian 300 km EWH trends, mm/yr, raw → corrected): Hudson Bay
-+31.2 → −0.6, Scandinavia +21.8 → +0.1, West Antarctica −112.7 → −124.3,
-NW India −23.6 → −25.4, Amazon +3.7 → +4.2, Türkiye −2.1 → −1.5. Degree 1
-(geocentre, TN-13) is not yet added.
+**GRACE/GRACE-FO (input).** ITSG-Grace2018 (Apr 2002 – Jun 2017, 162 months) and
+ITSG-Grace_operational (Jun 2018 – Sep 2026, 98 months), unconstrained monthly solutions to
+degree 120.
+- C20, and C30 where given, replaced by GSFC TN-14 SLR values; each calendar month takes the
+  TN-14 row overlapping it most.
+- GIA removed with the Caron et al. (2018) expectation model.
+- Anomalies relative to 2004–2009; equivalent water height with PREM load Love numbers;
+  degrees 0 and 1 dropped.
+- Two versions kept, unfiltered and DDK5-filtered, to degree 64. Which one is the input is an
+  open question (§10); experiments so far report both.
+- Check of the corrections (Gaussian 300 km trends, mm/yr, raw → corrected): Hudson Bay
+  +31.2 → −0.6, Scandinavia +21.8 → +0.1, Türkiye −2.1 → −1.5.
 
-**Two GRACE targets.** The gate runs on:
-- *unfiltered*: R3 band (16–32) signal/noise ~11.5;
-- *DDK5-filtered*: keeps ~94% of the R3 band at signal/noise ~13.5 and
-  removes the stripes.
-If the two disagree, the filter is shaping the result.
+**Land-only GRACE.** WaterGAP has no ocean and no ice sheets. GRACE inputs are therefore set to
+zero over ocean, Greenland and Antarctica before use (`prep.land_only`: synthesise at degree
+128, mask, expand again, zero degrees 0 and 1), so input and target share a domain.
 
-**Hydrological twin.** The same experiments on a global hydrological model's
-TWS (WaterGAP v2.2e, monthly means of its daily storage output, or similar;
-source to confirm), expanded to degree ≥ 128. Its fine degrees are clean
-signal, so on the twin:
-- the octave transfer is tested without GRACE noise;
-- R4 and R5 can be scored against truth.
+**WaterGAP v2.2e (target, decision 3).** GSWP3-W5E5 forcing, historical human water use,
+monthly TWS 1901–2019 at 0.5°, land only; expanded to degree 128 (`prep.build_model`).
+- Cells whose storage drifts by more than 1 m between 1901–1910 and 2010–2019 are set to zero
+  anomaly (about 2600 cells: unbounded snow accumulation on glaciers, point-like urban
+  groundwater abstraction).
+- Anomalies relative to 2004–2009, degrees 0 and 1 dropped, as for GRACE.
 
-The twin is a closed-loop check. It is not training data for the GRACE model.
+**Nine other ISIMIP3a models (side check).** CWatM, H08, HydroPy, JULES-ES-VN6P3, JULES-W2,
+LPJmL5-7-10-fire, MIROC-INTEG-LAND, ORCHIDEE-MICT, WEB-DHM-SG; same forcing and protocol, same
+processing (`isimip_<model>.npz`). Not training targets. Noted: JULES-ES varies 3–4× more
+than the others (real variability); CWatM and MIROC show early-century spin-up offsets.
 
-*Twin as built (2026-11-13, `prep.build_twin`):* WaterGAP v2.2e,
-gswp3-w5e5, histsoc, monthly TWS 1901–2019 (1,428 months, 0.5°, land only;
-ocean set to zero anomaly), regridded to a Driscoll–Healy grid and expanded to
-degree 128. About 2,600 cells (4% of land) whose storage drifts by more than
-1 m between 1901–1910 and 2010–2019 are excluded (set to zero anomaly). These
-are glacier cells where snow accumulates without bound (mostly high latitude,
-Greenland included) and city cells with point-like groundwater abstraction
-(New York −100 m, Los Angeles −30 m, Tokyo −22 m). Left in, they dominated
-the fine scales. At R5 a few isolated sharp features (lakes) still ring
-slightly. Twin splits: train 1901–1989, validation 1990–2001, test 2002–2019.
+**GLWS2.0 (benchmark, decision 3).** GRACE/GRACE-FO assimilated into WaterGAP (Gerdener et al.
+2023). It is built from the same two ingredients as our product, so agreement is partly by
+construction: it is a benchmark against the established method, not a validation. Compared at
+the same resolution (GLWS smoothed to our target degree). *To do: obtain and read the paper,
+confirm grid and period, download the data.*
 
-**Splits.** Months are correlated, so splits are blocks, never random months.
-- Train: Apr 2002 – Dec 2019.
-- Validation: Jan 2020 – Dec 2022 (all model selection and tuning).
-- Test: Jan 2023 – latest. Untouched until the gate decision.
-- Spatial hold-out: the test box (plus a margin of one target half-wavelength)
-  is masked out of the training loss, rotating with the field. The network
-  still sees the box in its inputs, but is never trained to produce its
-  detail.
-- Greenland and Antarctica are masked out of the loss (proposed): ice-sheet
-  trends dominate the variance there.
+**Masks.**
+- Test box (Türkiye, 30–45° N, 20–50° E) plus a margin of one target half-wavelength:
+  excluded from every training loss and from validation scores.
+- Greenland and Antarctica (south of 60° S): excluded from losses and scores.
+- Scores are computed over land only.
+
+**Splits.** Blocks of months, never random months.
+
+| data | use | period | months |
+|---|---|---|---|
+| WaterGAP alone | pre-training | 1901–1989 | 1068 |
+| WaterGAP alone | pre-training validation | 1990–2001 | 144 |
+| paired GRACE + WaterGAP | fine-tuning | 2002-04 to 2014-12 | 140 |
+| paired GRACE + WaterGAP | validation | 2015-01 to 2017-06 (end of GRACE) | 22 |
+| paired GRACE + WaterGAP | test | 2018-06 to 2019-12 (GRACE-FO) | 17 |
+
+WaterGAP ends in 2019, so paired months exist only for 2002–2019 and the earlier GRACE
+validation years (2020–2022) cannot serve this design. Pre-training never sees the paired
+period. GRACE months after 2019 have no target; they are where the finished product is
+applied.
 
 ## 5. Baselines
 
-Generators and point predictors on the same fields:
-1. **input**: the blurred field itself (no added detail). The floor.
-2. **regress**: a deterministic U-Net with the same backbone and inputs,
-   trained with MSE. The conditional mean.
-3. **spectral-gauss**: the strong Gaussian generator, the analogue of the GP
-   in imonet. Fit a power law to the degree variance of the input month,
-   extrapolate it into the missing degrees, draw random coefficients with
-   that spectrum, and add them to the input. On the sphere this is exact. Its
-   samples have the right power and no learned structure.
-4. **regress + spectral-gauss**: the regression mean plus Gaussian residuals
-   scaled to the validation error. This separates "better mean" from "better
-   spread".
+1. **input**: the input field with no added detail. The floor.
+2. **spectral baseline** (`spectral-gauss`): fit a power law to the degree variance of the
+   input, extrapolate it to the missing degrees, add random coefficients with that spectrum.
+   Right power, no learned structure.
+3. **climatological spectral baseline** (`spectral-gauss-clim`): the same with the mean
+   training spectrum.
+4. **direct network** (`regress`): §3.
+5. **pre-trained only**: the diffusion network before fine-tuning (the previous approach).
 
 ## 6. Metrics
 
-On the added detail (target minus input), in the test box rotated to the
-equator, and globally on land outside the box for validation:
-- Point: RMSE of the ensemble mean; correlation.
-- Probabilistic: fair CRPS (per pixel, area-weighted); energy score (per
-  field); spread/error ratio; 50/90% coverage; rank histograms.
-- Spectral: degree variance of samples against the truth, per degree, in the
-  target band.
-- Structure: a classifier two-sample test, real vs generated added detail (as
-  in imonet's C2ST), with a positive control.
-- Stripes: north–south vs east–west power ratio of the added detail, in the
-  original (unrotated) frame, against the truth.
-- Consistency: RMS of `w_{L/2}(output) − input`.
+On validation months, unrotated, weighted by cell area over land outside the test box and ice
+sheets, in mm; ensembles of 32 members.
+- **CRPS** (fair ensemble estimator), the main score.
+- **RMSE** of the ensemble mean, and its **correlation** with the true detail.
+- **Spread/error**: ensemble standard deviation over ensemble-mean RMSE, times √((M+1)/M).
+  1 is honest; below 1 is over-confident.
+- **Coverage** of the central 50% and 90% ensemble intervals (randomised PIT).
+- **Detail power ratio**: generated over true detail power.
+- **Consistency**: RMS difference between the re-blurred output and the input.
+- **Paired comparisons**: per-month CRPS difference with a 95% interval from a moving-block
+  bootstrap (6-month blocks).
 
-Paired comparisons (method vs method on the same fields) use a block
-bootstrap over months and a sign test over months, as in imonet.
+Not yet implemented: a stripe metric (north–south against east–west power of the added detail)
+and a classifier two-sample test of generated against real detail.
 
-## 7. Experiments
+## 7. Training and experiments
 
-### 7.1 A — Within-rung recovery (R2, validation)
-Train on R1 + R2 and score on R2 validation months. This sets the bar: does
-diffusion beat `spectral-gauss` and `regress` on CRPS and calibration at all?
+### 7.1 Training in two phases (decision 4)
 
-### 7.2 B — Octave transfer, the gate (R3, validation)
-Same model, no retraining, scored on R3, on both GRACE targets. Also train the
-R3 oracle. Report the transfer cost (B vs oracle) and the margin over the
-baselines.
+1. **Pre-train** on WaterGAP alone: blurred WaterGAP in, WaterGAP detail out. The network
+   learns what WaterGAP's fine detail looks like.
+2. **Fine-tune** on paired months: real GRACE in (land-only, limited to the input degree),
+   WaterGAP detail of the same month out. The network adapts to real GRACE inputs.
 
-**Gate criteria (accepted 2026-11-13):**
-- the transferred model beats `spectral-gauss` in CRPS on R3 (paired, block
-  bootstrap interval excludes zero);
-- its CRPS is within 10% of the R3 oracle;
-- spread/error between 0.85 and 1.15, coverage within 5 points of nominal;
-- no excess stripe power relative to the truth;
-- the same holds on the twin, **and** on the twin at R4 and R5 against truth.
+Settings as before unless a test says otherwise: AdamW, learning rate 2×10⁻⁴ with warm-up,
+batch 32, gradient clipping, EMA 0.999, best checkpoint by validation loss. The fine-tuning
+learning rate and length are to be chosen on the paired validation months; overfitting to 140
+months is the main risk and is watched through the validation loss and the denoiser
+diagnostic.
 
-### 7.3 C — Twin (closed loop)
-A and B repeated on the twin, plus R4 and R5 scored against twin truth with
-the R1+R2 model (and with an R1–R3 model, for comparison).
+Fallbacks: paired months only (no pre-training), or both kinds of sample mixed in one run.
 
-### 7.4 D — Türkiye (test)
-Run once, after the gate decision: R3 on the test box over the test months,
-all methods. Nothing tuned on it.
+### 7.2 Checks (decision 6)
 
-## 8. Order of work
+From weakest to strongest:
 
-1. **Data (done in part):** ITSG series fetched; anomalies and EWH conversion;
-   DDK filters available. To do: SLR C20 and GIA (§10); fetch the twin.
-2. **sh:** degree tapers, rotations, synthesis on rung grids, analysis on the
-   grid for the consistency projection. Unit tests: blurring a rung-L field
-   to L/2 equals the rung-L/2 input; projection idempotence; rotation
-   preserves degree variance.
-3. **data:** sampler over (month, rung, rotation) with the temporal splits
-   and the rotated loss masks; normalisation.
-4. **baselines, metrics:** experiment A for the baselines, so the bar is set
-   before any model is trained.
-5. **model, train:** EDM U-Net (2D) and `regress`; experiment A, then B.
-6. **twin:** experiment C.
-7. Gate decision (with the user). Then D.
+1. **Held-out years against WaterGAP.** Did the network learn its task? Diffusion against the
+   direct network and the spectral baseline; spread checked.
+2. **GRACE's own detail at coarse steps.** The same two-phase training at 8 → 16 and 16 → 32,
+   scored against the detail GRACE actually measured. This is the only global check against
+   observations. To beat: 22.1 and 29.3 mm (the previous approach with the stochastic sampler
+   and inflation; those numbers are for 2020–2022 and are recomputed on the new validation
+   months for a like-for-like comparison).
+3. **GLWS at fine scales.** Benchmark; reported as a comparison, with no pass or fail.
+4. **Independent data in Türkiye.** Well levels, GNSS loading or basin water budgets: data that
+   involve neither GRACE nor WaterGAP. The only real proof at fine scales. Data to be found
+   (§10).
+
+**Success** for checks 1 and 2: better than the spectral baseline and the direct network in
+CRPS, with a bootstrap interval excluding zero, and spread/error between 0.85 and 1.15. For
+check 4: closer to the independent data than coarse GRACE alone, and ideally at least as close
+as WaterGAP and GLWS.
+
+The validation and test periods are short (22 and 17 months), so intervals will be wide. Test
+months and the Türkiye box are not touched until the design is frozen.
+
+### 7.3 Order of experiments (decision 7)
+
+Target: degree 128 (~160 km). Whether to reach it in one step (32 → 128) or two
+(32 → 64 → 128) is decided by experiment. In the two-step version only the first step sees
+real GRACE; the second is fine-tuned on the first step's output.
+
+**Stage 1 — coarse scales.** Cheap, on grids we already handle, and GRACE can check the result
+(check 2).
+
+| variant | what it tests |
+|---|---|
+| A. pre-trained only | the reference |
+| B. pre-train + fine-tune, two steps (8 → 16, 16 → 32) | does this design beat the previous one? |
+| C. pre-train + fine-tune, one step (8 → 32) | one step against two |
+| D. paired months only, no pre-training | is pre-training needed? |
+| E. direct network, trained as B or C | does diffusion buy anything? |
+
+Each run is roughly 1–4 hours. A WaterGAP-only pre-trained network exists for 4 → 8 and
+8 → 16; pre-training at 16 → 32 and at 8 → 32 are new runs. A ten-model pre-trained network for
+8 → 16 and 16 → 32 exists and can serve as an extra variant of B (pre-train on ten models,
+fine-tune towards WaterGAP).
+
+**Stage 2 — fine scales.** Take the stage 1 winner to 32 → 128. If one step and two steps are
+close in stage 1, run both. Scored by checks 1 and 3.
+
+**Stage 3 — Türkiye.** Check 4, on the test box, once independent data are in hand.
+
+**Later, only if wanted:** degree 256 (~80 km); needs finer handling of memory and a judgement
+on how much of WaterGAP's finest detail is believable.
+
+## 8. What needs building
+
+- `data`: paired samples (input from one dataset, target from another, same month and
+  rotation); the new paired splits.
+- `train`: start from a checkpoint (fine-tuning); a fine-tuning learning rate.
+- `evaluate`: paired scoring (GRACE input, WaterGAP truth); steps spanning two octaves;
+  chaining two steps.
+- **Patch training for fine scales.** Whole-globe training at degree 128 does not fit the 32 GB
+  card at a useful batch size (16 → 32 already used 29.6 GB at batch 32). Stage 2 needs
+  training on cut-out patches, with care at the patch edges.
+- `fetch` / `prep`: GLWS2.0.
+- Stripe metric and classifier two-sample test (§6).
 
 ## 9. Code layout
 
 ```
 src/grace_diffusion/
-  fetch.py       download GRACE SH series, DDK matrices, the twin
-  sh.py          coefficients, anomalies, EWH, Love numbers, DDK, tapers,
-                 rotations, synthesis/analysis on rung grids
-  grids.py       rung grids, masks (test box, ice sheets), rotation of masks
-  data.py        torch Dataset over (month, rung, rotation)
-  model/         U-Net denoiser, EDM loss and sampler, consistency projection
-  baselines.py   input, regress, spectral-gauss, regress+gauss
-  metrics.py     CRPS, energy score, spread/error, coverage, degree variance,
-                 stripe ratio, C2ST, consistency
+  fetch.py       download GRACE series, WaterGAP, ISIMIP3a models
+  prep.py        build datasets: GRACE (raw, DDK5, land-only), WaterGAP, other models
+  sh.py          coefficients, tapers, rotations, synthesis/analysis, consistency projection
+  grids.py       grids, masks (test box, ice sheets, land), rotation of masks
+  data.py        splits, samplers over (month, step, rotation), several datasets
+  model/         U-Net; EDM loss, samplers; direct network
+  baselines.py   input, spectral baselines
+  metrics.py     CRPS, spread/error, coverage, power ratio, consistency
   train.py
   evaluate.py
-  cli.py
-scripts/         exploratory analyses (explore_filters.py, explore_ddk.py)
+scripts/         run scripts (phase1*.sh, g1_*.sh), diagnostics, calibration, exploration
 tests/           unit tests on synthetic fields
 docs/            this document
+reports/         written reports (LaTeX)
 survey/          literature survey (LaTeX) and notes
 ```
 
-Dependencies: numpy, scipy, torch, pyshtools, gravity-toolkit (Love numbers),
-shxarray (DDK reader), matplotlib.
-
 ## 10. Open questions
 
-- **Taper shape** of the low-pass operator.
-- **Normalisation:** per-map RMS of the input (scale-free, part of the
-  hypothesis) or per-rung degree-variance scaling.
-- **Rotations and stripes:** full random rotations reorient the stripes of the
-  unfiltered target. Alternatives: rotations about the polar axis only (keeps
-  stripe orientation and latitude structure, less augmentation), or full
-  rotations on the DDK5 target only.
-- **Projection at every sampling step** or only on the final sample.
-- **Degree 1 (geocentre):** add a TN-13-style estimate, or leave degree 1 out
-  of all rungs (it only affects the largest scales of R1).
-- **Ensemble size** for scoring and the number of sampler steps.
-- **Data volume:** about 180 training months with rotation augmentation.
-  Whether the rotated copies of the same month are diverse enough is unknown
-  until A.
+For the supervisor:
+1. **Independent data for Türkiye** (check 4): wells, GNSS loading, basin budgets, regional
+   products.
+2. **GRACE product and filter** for the input: keep ITSG; DDK5 or unfiltered?
+3. **Target resolution:** degree 128, or finer later?
+4. **WaterGAP as the only target:** in the earlier test ten models did better than WaterGAP
+   alone on GRACE (24.0 against 28.0 mm at 8 → 16). Should the other models return as targets
+   once the paired design is working?
 
-## 11. Later phases (not designed yet)
-
-- **Phase 2 — Finer than GRACE over Türkiye** (only if the gate passes).
-  Generate the next octaves on real GRACE. Validate against independent data:
-  GNSS vertical loading (imonet's station data) and wells where available.
-  Report how much fine-scale variance comes from the model's learned
-  structure.
-- **Phase 3 — Adding a prior.** Condition on hydrological-model fields and
-  covariates; measure their contribution against GRACE-only.
-- **Phase 4 — Time.** Gap filling, nowcasting over the release latency, and
-  reconstruction, with GRACE context months as optional inputs (dropped at
-  random in training, like imonet's null token).
-- **Phase 5 — Operator-aware sampling.** Guide a prior through each product's
-  real observation operator and error covariance (posterior sampling), which
-  also turns the noisy 31–60 band into usable information.
+Technical:
+- Fine-tuning length and learning rate; how quickly 140 paired months overfit.
+- Static inputs (topography, land/water mask) as a later addition.
+- Degree 1 (geocentre) is still left out.
+- Whether the spread needs inflation after fine-tuning, and on what it is fitted.
 
 ## Appendix A — Data findings (2026-11-13)
 
 **Where GRACE's signal ends** (`scripts/explore_filters.py`, ITSG, 260 months,
-`runs/explore/degree_amplitudes.png`). The median monthly anomaly rises above
-the noise only up to about degree 40. From ~45 upward it equals the noise
-(month-to-month difference / √2), which matches the ITSG formal errors. Over
-the test box, the degree-60 field of April 2010 is north–south stripes of
-±400 mm against a real signal of ~100–150 mm; at degree 96 the stripes reach
-±3,000 mm.
+`runs/explore/degree_amplitudes.png`). The median monthly anomaly rises above the noise only up
+to about degree 40. From ~45 upward it equals the noise (month-to-month difference / √2), which
+matches the ITSG formal errors. Over the test box, the degree-60 field of April 2010 is
+north–south stripes of ±400 mm against a real signal of ~100–150 mm; at degree 96 the stripes
+reach ±3,000 mm.
 
-**Filters per band** (`scripts/explore_ddk.py`, EWH with PREM Love numbers,
-`runs/explore/filters_by_band.csv`, `maps_ddk_turkiye_box.png`). Signal kept
-and residual signal/noise power:
+**Filters per band** (`scripts/explore_ddk.py`, `runs/explore/filters_by_band.csv`). Signal
+kept and residual signal/noise power:
 
 | filter | 16–30 kept | 16–30 S/N | 31–60 kept | 31–60 S/N |
 |---|---|---|---|---|
@@ -334,67 +370,65 @@ and residual signal/noise power:
 | DDK4 | 0.90 | 18 | 0.22 | 22 |
 | DDK5 | 0.94 | 13.5 | 0.41 | 9 |
 
-No filter keeps any signal above degree 60. DDK removes the stripes in the
-test box; Gaussian 300 km leaves elongated north–south features. The noise
-proxy includes real month-to-month change, so signal estimates are lower
-bounds, and the 31–60 "kept" values rest on a noisy signal estimate.
+No filter keeps any signal above degree 60. DDK removes the stripes in the test box; Gaussian
+300 km leaves elongated north–south features. The noise proxy includes real month-to-month
+change, so signal estimates are lower bounds.
 
-## Appendix B — Phase 1 results (2026-11-16/17)
+## Appendix B — Results of the earlier approaches
 
-Validation months only (GRACE 2020–2022, twin 1990–2001); scored over validation land;
-CRPS in mm EWH; 32 members (16 at R5). Raw scores: `runs/eval/*.csv` on the server;
-scripts `scripts/phase1.sh`, `scripts/phase1b_noise.sh`, `scripts/diagnose_sampler.py`.
+CRPS in mm, validation months (GRACE 2020–2022, WaterGAP 1990–2001), land outside the test box
+and ice sheets, 32 members. Scores: `runs/eval/*.csv`. Full account:
+`reports/phase1/phase1_report.pdf`.
 
-**Phase 1 (commit 3be72f3/9fe39fd, 40k steps, EDM default noise schedule).**
+**B.1 Octave transfer on GRACE DDK5** (`scripts/phase1.sh`, `phase1b_noise.sh`). Networks
+trained on R1 + R2.
 
-| CRPS | input | spectral-gauss | diffusion | regress | oracle |
+| method | R2 (trained) | R3 (one octave finer) | R3 spread/error | R3 − spectral baseline (95%) |
+|---|---|---|---|---|
+| input | 62.9 | 64.0 | — | |
+| spectral baseline | 45.9 | 48.7 | 1.23 | |
+| direct network | 26.3 | 71.1 | — | |
+| diffusion, default schedule | 37.2 | 45.5 | 0.82 | −3.3 [−3.7, −2.9] |
+| diffusion, widened schedule | 20.5 | 52.5 | 0.37 | +3.8 [+2.7, +4.6] |
+| diffusion, log-uniform schedule | 21.6 | 51.0 | 0.49 | +2.3 [+1.7, +2.8] |
+| diffusion trained on R3 itself | — | 24.8 | 0.88 | |
+
+The default-schedule network barely used its input at high noise (denoiser correlation with
+the true detail at σ = 10: 0.26 at R1, 0.40 at R2, against 0.89 and 0.92 for the direct
+network); only ~0.2% of its training batches had σ > 10. Its small lead at R3 came from being
+close to generic noise.
+
+**B.2 Octave transfer on WaterGAP** (`scripts/phase1c_twin.sh`). Trained on R1 + R2.
+
+| step | spectral baseline | default schedule | widened schedule | widened − baseline (95%) | spread/error |
 |---|---|---|---|---|---|
-| A: GRACE DDK5 R2 | 62.9 | 45.9 | 37.2 | **26.3** | — |
-| B: GRACE DDK5 R3 | 64.0 | 48.7 | 45.5 | 71.1 | **24.8** |
-| B: GRACE raw R3 | 65.1 | 49.4 | 46.4 | 72.0 | 25.5 |
-| C: twin R2 / R3 / R4 / R5 | 21.2 / 19.2 / 19.6 / 20.1 | 16.1 / 14.4 / 15.0 / 15.5 | 9.4 / 13.0 / 14.1 / 14.7 | — | — |
+| R2 (trained) | 16.1 | 9.4 | 7.2 | −8.9 [−9.1, −8.6] | 0.85 |
+| R3 | 14.4 | 13.0 | 14.5 | +0.1 [−0.2, +0.3] | 0.48 |
+| R4 | 15.0 | 14.1 | 15.5 | +0.5 [+0.4, +0.6] | 0.43 |
+| R5 | 15.5 | 14.7 | — | | |
 
-Gate (§7.2), Phase 1 model: beats spectral-gauss at R3 (−3.3 mm, block-bootstrap 95%
-[−3.7, −2.9]) ✅; within 10% of the oracle ❌ (+84%); spread/error 0.82, coverage 40/82% ❌;
-stripes not measured; twin R3–R5 beats baselines by a shrinking margin (−1.4, −0.8, −0.8 mm).
-**Gate not passed.**
+**B.3 Trained on ten models, applied to land-only GRACE** (`scripts/g1_models.sh`). Trained on
+R2 + R3.
 
-**Diagnosis.** The Phase 1 diffusion model was weaker than `regress` in-distribution. The
-sampler was not the cause (32 vs 128 steps identical). Its denoiser barely used the input
-at high noise (corr with true detail at σ=10: 0.26 at R1, 0.40 at R2, vs 0.89/0.92 for
-regress): EDM's default ln σ ~ N(−1.2, 1.2²) puts only ~0.2% of batches at σ > 10. The R3
-oracle learned it anyway (0.79), plausibly because its grids carry 4–16× more pixels per batch.
+| input | step | input only | spectral baseline | model-trained | spread/error | GRACE-trained | model-trained − baseline (95%) |
+|---|---|---|---|---|---|---|---|
+| DDK5 | R2 | 45.8 | 33.8 | 24.0 | 0.66 | 13.7 | −9.9 [−11.5, −8.5] |
+| DDK5 | R3 | 50.7 | 38.1 | 30.3 | 0.64 | 21.8 | −7.9 [−8.6, −7.1] |
+| unfiltered | R2 | 46.5 | 34.3 | 24.9 | 0.67 | 15.4 | −9.4 [−11.0, −8.0] |
+| unfiltered | R3 | 54.3 | 40.6 | 33.5 | 0.64 | 26.1 | −7.1 [−7.8, −6.3] |
 
-**Phase 1b (commit c78433c, 60k steps, sampler from σ_max = 20).** `wide`: ln σ ~ N(−0.4, 1.6²);
-`logu`: ln σ uniform on [0.002, 20].
+WaterGAP alone as training data scored 28.0 at R2 (DDK5). On full GRACE fields (ocean and ice
+included) the model-trained network scored 41.0 against 48.7 at R3 and 44.3 against 45.9 at R2.
 
-| | A: R2 CRPS | R2 corr (mean) | B: R3 CRPS (DDK5 / raw) | R3 corr | R3 spread/error | R3 vs spectral-gauss (95%) |
-|---|---|---|---|---|---|---|
-| Phase 1 diffusion | 37.2 | 0.53 | 45.5 / 46.4 | 0.28 | 0.82 | −3.3 [−3.7, −2.9] |
-| wide | **20.5** | 0.90 | 52.5 / 53.5 | 0.21 | 0.37 | +3.8 [+2.7, +4.6] |
-| logu | 21.6 | 0.89 | 51.0 / 52.0 | 0.23 | 0.49 | +2.3 [+1.7, +2.8] |
+**B.4 Spread calibration of the ten-model network** (`scripts/g1_calibrate.sh`,
+`scripts/calibrate_spread.py`). Land-only GRACE DDK5, validation 2020–2022.
 
-**Reading.** With the noise schedule fixed, the model is now the best method in-distribution
-(R2: 20.5 vs 26.3 regress, 45.9 spectral-gauss; corr 0.90), but it transfers *worse*:
-at R3 it loses to spectral-gauss and is badly over-confident (spread/error 0.37–0.49).
-The Phase 1 model's apparent transfer win came from it being weak and close to generic
-noise. Like `regress`, a model that has learned R1/R2 well does not carry the skill one
-octave up on GRACE. The R3 oracle shows the R3 detail itself is learnable from R3 inputs.
-Not yet separated: whether the failure is the physics (GRACE fields not self-similar
-across these degrees) or GRACE/DDK-specific (filter attenuation and noise growing in
-16–32). The twin, retrained with the fixed schedule, separates these.
+| version | R2 CRPS | R2 spread/error | R3 CRPS | R3 spread/error |
+|---|---|---|---|---|
+| deterministic sampler (B.3) | 24.0 | 0.66 | 30.3 | 0.64 |
+| stochastic sampler (churn 20) | 22.6 | 0.74 | 29.8 | 0.72 |
+| + inflation fitted on models (1.1, 1.0) | 22.3 | 0.81 | 29.8 | 0.72 |
+| + inflation fitted on GRACE training years (1.2, 1.2) | 22.1 | 0.89 | 29.3 | 0.87 |
 
-**Phase 1c (2026-11-17, commit c76b8d6).** Twin, R1+R2, `wide` schedule, 60k steps.
-
-| twin | CRPS | spectral-gauss | paired diff (95%) | corr (s.-gauss) | spread/error |
-|---|---|---|---|---|---|
-| R2 (trained) | **7.2** | 16.1 | −8.9 [−9.1, −8.6] | 0.92 (0.20) | 0.85 |
-| R3 | 14.5 | 14.4 | +0.1 [−0.2, +0.3] | 0.52 (0.34) | 0.48 |
-| R4 | 15.5 | 15.0 | +0.5 [+0.4, +0.6] | 0.36 (0.31) | 0.43 |
-
-The twin fails the same way as GRACE, so the failure is not caused by GRACE noise or the
-DDK filter. Some structure carries one octave on clean data (ensemble-mean corr 0.52 vs 0.34),
-but the spread collapses and CRPS only ties. **Conclusion: octave transfer, as tested, does not
-work.** A direction change (e.g. train on a hydrological model for the band of interest, with
-GRACE fixing the coarse degrees via the consistency projection) is open for discussion with
-the user and their professor. Write-up: `reports/phase1/phase1_report.pdf`.
+On the models' own held-out years the network was also too narrow with the deterministic
+sampler (0.71 and 0.85) and close to calibrated with the stochastic one (0.93 and 0.98).

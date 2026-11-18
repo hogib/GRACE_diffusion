@@ -132,7 +132,7 @@ def land_only(proc: Path, src: str, dst: str, mask_ice: bool = True) -> None:
     """A dataset with ocean (and, by default, Greenland and Antarctica) set to zero, like
     the hydrological models: synthesise each month on a fine grid, mask, re-expand to the
     source degree, zero degrees 0 and 1. Input and truth are then both built from the
-    masked field, so the experiment stays consistent (design doc 01, section 4).
+    masked field, so the experiment stays consistent (design doc §4).
     """
     from . import grids
 

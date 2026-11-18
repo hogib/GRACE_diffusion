@@ -58,7 +58,7 @@ def fetch_series(series: str, dest: Path, nmax: int = 120, pause: float = 0.2) -
 
 
 # ISIMIP3a global water models: total water storage, GSWP3-W5E5 obsclim, histsoc, default
-# runs, monthly 1901-2019, 0.5 deg (design doc 01, section 3). Public, no login.
+# runs, monthly 1901-2019, 0.5 deg (design doc §4). Public, no login.
 ISIMIP_API = "https://data.isimip.org/api/v1/datasets/"
 ISIMIP_QUERY = dict(simulation_round="ISIMIP3a", sector="water_global", variable="tws",
                     climate_forcing="gswp3-w5e5", climate_scenario="obsclim",

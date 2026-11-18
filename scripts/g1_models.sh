@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G1 (design doc 01, section 5): train on ten ISIMIP3a hydrological models at the scales GRACE
+# G1 (design doc, Appendix B.3): train on ten ISIMIP3a hydrological models at the scales GRACE
 # still resolves (8->16, 16->32), apply to land-only GRACE, score against GRACE's own detail.
 # Reference: the same network trained on land-only GRACE (the fair upper bound).
 # The two runs train one after the other: one 16->32 run fills the 32 GB GPU. A run whose

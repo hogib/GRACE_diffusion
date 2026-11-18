@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1 (design doc §7): train the four models in parallel, then score experiments A, B, C.
+# Phase 1 (design doc, Appendix B.1-B.2): train the four models in parallel, then score experiments A, B, C.
 #
 # Run from anywhere on the GPU server, detached:
 #   nohup setsid bash scripts/phase1.sh [STAGE] > runs/phase1.log 2>&1 &
