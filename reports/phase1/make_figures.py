@@ -35,9 +35,10 @@ def crps(files, L):
 # --- Figure 1: CRPS where trained (R2) vs one octave up (R3), GRACE DDK5 -------------------
 r2 = crps(["A_grace_ddk5.csv", "A1b_grace_ddk5.csv"], 16)
 r3 = crps(["B_grace_ddk5.csv", "B1b_grace_ddk5.csv"], 32)
-rows = [("input", "input"), ("spectral-gauss", "spectral-gauss"), ("regress", "regress"),
-        ("diffusion", "diffusion, Phase 1"), ("logu", "diffusion, logu"),
-        ("wide", "diffusion, wide"), ("oracle", "oracle (trained on R3)")]
+rows = [("input", "input only"), ("spectral-gauss", "spectral baseline"),
+        ("regress", "regression U-Net"), ("diffusion", "diffusion, default"),
+        ("logu", "diffusion, log-uniform"), ("wide", "diffusion, widened"),
+        ("oracle", "R3-trained reference")]
 fig, ax = plt.subplots(figsize=(3.45, 2.5))
 for y, (m, lab) in enumerate(rows):
     a, b = r2.get(m), r3.get(m)
@@ -51,8 +52,8 @@ ax.set_yticks(range(len(rows)), [r[1] for r in rows])
 ax.invert_yaxis()
 ax.set_xlabel("CRPS (mm EWH), lower is better")
 ax.axvline(r3["spectral-gauss"], color=INK2, lw=0.8, ls=(0, (3, 2)), zorder=0)
-ax.scatter([], [], s=34, color=C1, label="R2, trained here")
-ax.scatter([], [], s=34, color=C2, label="R3, the gate")
+ax.scatter([], [], s=34, color=C1, label="R2 (training scale)")
+ax.scatter([], [], s=34, color=C2, label="R3 (one octave finer)")
 fig.legend(loc="upper center", ncol=2, handletextpad=0.1, columnspacing=1.2, fontsize=7.5)
 ax.grid(axis="y", visible=False)
 fig.tight_layout(rect=(0, 0, 1, 0.92))
@@ -63,18 +64,18 @@ tw = pd.concat([pd.read_csv(EV / "C_twin.csv"), pd.read_csv(EV / "C_twin_r5.csv"
 g = tw.groupby(["method", "L"]).crps.mean().unstack(0)
 fig, ax = plt.subplots(figsize=(3.45, 2.2))
 x = range(len(g.index))
-for m, col, lab in [("input", INK2, "input"), ("spectral-gauss", C2, "spectral-gauss"),
-                    ("diffusion", C1, "diffusion (Phase 1)")]:
+for m, col, lab in [("input", INK2, "input"), ("spectral-gauss", C2, "spectral baseline"),
+                    ("diffusion", C1, "diffusion, default")]:
     ax.plot(x, g[m].values, color=col, marker="o", ms=4.5, mec="white", mew=1, label=lab)
 wide = pd.read_csv(EV / "C1c_twin.csv").groupby("L").crps.mean()
 ax.plot([list(g.index).index(L) for L in wide.index], wide.values, color=C3, marker="o", ms=4.5,
-        mec="white", mew=1, label="diffusion (wide, Phase 1c)")
+        mec="white", mew=1, label="diffusion, widened")
 ax.set_xticks(list(x), [f"R{i + 2}\n{L // 2}→{L}" for i, L in enumerate(g.index)])
 ax.axvspan(-0.3, 0.3, color=GRID, alpha=0.6, lw=0, zorder=0)
 ax.set_ylabel("CRPS (mm EWH)")
 ax.set_ylim(0, 24)
 ax.set_xlim(-0.4, len(g.index) - 0.6)
-ax.text(0, 22.6, "trained", ha="center", va="center", color=INK2, fontsize=7)
+ax.text(0, 22.6, "training", ha="center", va="center", color=INK2, fontsize=7)
 ax.legend(loc="lower right", bbox_to_anchor=(1.0, -0.02), fontsize=7, labelspacing=0.25)
 fig.tight_layout()
 fig.savefig(OUT / "twin_rungs.pdf")
@@ -92,6 +93,7 @@ diag = {  # rung: {model: (corr at sigma 10, corr at sigma 80), ensemble-mean co
 fig, ax = plt.subplots(figsize=(3.45, 2.2))
 labels = ["R1 (L=8)", "R2 (L=16)", "R3 (L=32)"]
 series = [("Phase 1", C1), ("wide", C2), ("oracle", C3), ("regress", INK2)]
+names = {"Phase 1": "default", "wide": "widened", "oracle": "R3-trained", "regress": "regression"}
 w = 0.19
 for i, (m, col) in enumerate(series):
     xs, ys = [], []
@@ -101,7 +103,7 @@ for i, (m, col) in enumerate(series):
             continue
         xs.append(j + (i - 1.5) * w)
         ys.append(v if isinstance(v, float) else v[1])
-    ax.bar(xs, ys, width=w - 0.03, color=col, label=m)
+    ax.bar(xs, ys, width=w - 0.03, color=col, label=names[m])
 ax.set_xticks(range(3), labels)
 ax.set_ylabel("corr(ensemble mean, true detail)")
 ax.set_ylim(0, 1)
