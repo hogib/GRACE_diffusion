@@ -1,7 +1,7 @@
 # 01 — Design: model-trained detail, GRACE-constrained (draft)
 
-*Draft, 2026-11-17, for discussion with the supervisor. Nothing here is built yet.
-Supersedes the octave-transfer route of `00-design.md` §2 after Phase 1 (results:
+*Draft, 2026-11-17, for discussion with the supervisor. Updated 2026-11-18: G1 has been run
+(§8). Supersedes the octave-transfer route of `00-design.md` §2 after Phase 1 (results:
 `00-design.md` Appendix B, `reports/phase1/phase1_report.pdf`).*
 
 ## 0. Where we are
@@ -58,6 +58,18 @@ monthly (or daily, aggregated), ≤ 0.5°, total water storage or all its compon
 
 Each model is cleaned like the WaterGAP twin (runaway glacier and urban cells removed),
 expanded to degree 128, and stored like `twin.npz`.
+
+**Chosen for now (2026-11-18, pending confirmation):** ten ISIMIP3a water-sector models,
+GSWP3-W5E5 `obsclim` `histsoc`, monthly TWS at 0.5°, 1901–2019: CWatM, H08, HydroPy,
+JULES-ES-VN6P3, JULES-W2, LPJmL5-7-10-fire, MIROC-INTEG-LAND, ORCHIDEE-MICT, WaterGAP2-2e
+(the twin) and WEB-DHM-SG. Fetched with `python -m grace_diffusion.fetch data/raw isimip`,
+built with `python -m grace_diffusion.prep data/raw data/proc isimip` into
+`isimip_<model>.npz`. Runaway cells removed: 68 (WEB-DHM-SG) to 5,603 (JULES-ES). Noted and
+kept: JULES-ES varies 3–4× more than the others (real variability, not drift); CWatM
+and MIROC show early-century spin-up offsets.
+
+**Land-only GRACE** (`grace_ddk5_land`, `grace_raw_land`): ocean, Greenland and Antarctica set to
+zero, and degrees 0/1 set to zero, so GRACE inputs cover the same domain as the models.
 
 **GRACE.** Unchanged from Phase 1 (ITSG, TN-14, Caron GIA, DDK5 / unfiltered),
 provisional pending confirmation.
@@ -127,3 +139,41 @@ time (each single-octave run is a few hours on the workstation).
    budgets, regional products)?
 5. **Scope of Phase 1 in a write-up:** the negative octave-transfer result plus the
    noise-schedule finding may be worth reporting on their own.
+
+## 8. Results so far
+
+### G1 (2026-11-18)
+
+Setup:
+- Two networks, both trained on R2 + R3 (8 → 16, 16 → 32) with the `wide` schedule,
+  σ_max 20 and 60k steps:
+  - `models`: the ten ISIMIP3a models, each sample drawn from a model chosen at random;
+  - `grace-land`: land-only GRACE DDK5, training years only. This is the upper bound.
+- Script: `scripts/g1_models.sh`. Scores: `runs/eval/G1_*.csv`.
+- Validation is 2020–2022 (36 months), with a 6-month block bootstrap.
+
+| input | rung | input | spectral-gauss | **models** | grace-land | spread/err | models − s.-gauss |
+|---|---|---|---|---|---|---|---|
+| DDK5 land | R2 | 45.8 | 33.8 | **24.0** | 13.7 | 0.66 | −9.9 [−11.5, −8.5] |
+| DDK5 land | R3 | 50.7 | 38.1 | **30.3** | 21.8 | 0.64 | −7.9 [−8.6, −7.1] |
+| raw land | R2 | 46.5 | 34.3 | **24.9** | 15.4 | 0.67 | −9.4 [−11.0, −8.0] |
+| raw land | R3 | 54.3 | 40.6 | **33.5** | 26.1 | 0.64 | −7.1 [−7.8, −6.3] |
+
+- **Skill:** the models network clearly beats the baseline. The correlation of its ensemble mean
+  with GRACE's detail is 0.73 (R2) and 0.64 (R3), against 0.17 and 0.29 for the baseline.
+- **Several models beat one:** WaterGAP alone scored 28.0 at R2 on DDK5 land; the ten models
+  score 24.0.
+- **Full GRACE DDK5** (ocean and ice included):
+  - R3: 41.0 against 48.7, −7.7 [−8.9, −6.6]. In Phase 1 only the oracle, which was trained at
+    R3, beat the baseline here.
+  - R2: 44.3 against 45.9, −1.6 [−2.7, −0.8]. Here the ocean and ice detail dominates.
+- **Gap to the GRACE-trained network:** 8–10 mm.
+- **Spread too narrow:** spread/error is 0.64–0.67, and 90% coverage 72–76%.
+  `grace-land` is narrow too (0.67–0.81), so this is partly the method itself.
+
+**Verdict:** passed on skill, failed on calibration (gate 0.85–1.15).
+
+**Next:**
+1. Fix the spread. First the cheap options on the G1 checkpoints: sampler settings, and spread
+   inflation fitted on validation years. Retrain (e.g. input augmentation) only if those fail.
+2. Then G2 (leave one model out) at 32 → 64 and 64 → 128.

@@ -348,8 +348,8 @@ worse than \code{regress} (37.2 vs 26.3\,mm; ensemble-mean correlation 0.53 vs 0
 diffusion ensemble's mean should approach the regression answer, so this pointed to a problem.
 
 \paragraph{Experiment B.} At R3 the diffusion model beats \code{spectral-gauss} by $3.3$\,mm
-(95\% interval $[-3.7, -2.9]$, better in every month), and by 3.1\,mm on unfiltered GRACE
-($[-3.5, -2.7]$; CRPS 46.4 vs 49.4). The oracle reaches 24.8\,mm. \code{regress} collapses
+(95\% interval $[-3.7, -2.9]$, better in every month), and by 3.1\,mm on the unfiltered
+fields ($[-3.5, -2.7]$; CRPS 46.4 vs 49.4). The oracle reaches 24.8\,mm. \code{regress} collapses
 at R3 (71.1\,mm, worse than adding nothing).
 
 \paragraph{Experiment C (twin).} Figure~\ref{fig:twin} and Table~\ref{tab:twin}. The twin model
@@ -544,7 +544,8 @@ examples below about 500\,km. Global hydrological models do.
 
 \section{Next step: learn detail from hydrological models, keep GRACE's coarse picture}
 \label{sec:next}
-\emph{Proposed; not yet built or agreed. Full draft: \code{docs/01-design-model-trained.md}.}
+\emph{Proposed; not yet agreed. Full draft: \code{docs/01-design-model-trained.md}. Its first
+gate (G1) has been run: Section~\ref{sec:g1}.}
 
 \subsection{The idea}
 Train the diffusion model on hydrological-model TWS fields at the scales GRACE cannot resolve:
@@ -625,14 +626,93 @@ To pass G1 and G2 a model must beat \code{spectral-gauss} with calibrated spread
   \item Which independent data exist for Türkiye (wells, basin budgets, regional products)?
 \end{enumerate}
 
+\section{First test of the new approach: gate G1}\label{sec:g1}
+
+\subsection{Materials}
+\textbf{Hydrological models.} Ten global models from the ISIMIP3a water sector, all run with
+the same forcing and protocol (GSWP3-W5E5, \code{obsclim}, \code{histsoc}), monthly total water
+storage at $0.5^\circ$, 1901--2019: CWatM, H08, HydroPy, JULES-ES-VN6P3, JULES-W2,
+LPJmL5-7-10-fire, MIROC-INTEG-LAND, ORCHIDEE-MICT, WaterGAP2-2e (the Phase 1 twin) and
+WEB-DHM-SG. Each is prepared exactly like the twin: runaway cells removed (68 to 5\,603
+cells, depending on the model), anomalies relative to 2004--2009, expanded to degree 128,
+and degrees 0 and 1 set to zero. Same year splits as the twin. Two things were noted
+and kept: JULES-ES varies three to four times more than the others (real variability, not
+drift), and CWatM and MIROC show early-century offsets (spin-up).
+
+\textbf{Land-only GRACE.} The models have no ocean and no ice sheets, so GRACE was given the
+same domain. Each GRACE month (DDK5 and unfiltered) is synthesised at degree 128, set to
+zero over ocean, Greenland and Antarctica, expanded again, and its degrees 0 and 1 are set to
+zero. Scores on these fields measure what the models can teach about land hydrology, without
+asking the network to invent ocean or ice-sheet detail it has never seen.
+
+\subsection{Methods}
+Two networks, both trained on R2 and R3 (8 $\to$ 16 and 16 $\to$ 32) with the \code{wide}
+schedule, $\sigma_{\max}=20$ and 60\,000 steps:
+\begin{itemize}
+  \item \code{models}: trained on the ten models together; each training sample comes from a
+    model chosen at random.
+  \item \code{grace-land}: trained on land-only GRACE DDK5 (training years). This is the
+    upper bound: the score of a network that has seen GRACE at these scales.
+\end{itemize}
+Both are applied to blurred land-only GRACE and scored against GRACE's own detail, on the 36
+validation months, with the Phase 1 baselines and a paired block bootstrap (6-month blocks).
+The \code{models} network is also scored on full GRACE DDK5 (ocean and ice included).
+An earlier trial with WaterGAP alone (the Phase 1c twin model) is given for comparison.
+
+\subsection{Results}
+\begin{table}[ht]
+\centering\small\setlength{\tabcolsep}{4pt}
+\caption{G1, land-only GRACE, validation 2020--2022. CRPS in mm. Last column: paired CRPS
+difference \code{models} $-$ \code{spectral-gauss}, 95\% bootstrap interval.}
+\label{tab:g1}
+\begin{tabular}{llrrrrrc}
+  \toprule
+  input & rung & input & s.-gauss & \code{models} & \code{grace-land} & spread/err. &
+    \code{models} $-$ s.-gauss \\
+  \midrule
+  DDK5 & R2 & 45.8 & 33.8 & \textbf{24.0} & 13.7 & 0.66 & $-9.9\ [-11.5, -8.5]$ \\
+  DDK5 & R3 & 50.7 & 38.1 & \textbf{30.3} & 21.8 & 0.64 & $-7.9\ [-8.6, -7.1]$ \\
+  raw  & R2 & 46.5 & 34.3 & \textbf{24.9} & 15.4 & 0.67 & $-9.4\ [-11.0, -8.0]$ \\
+  raw  & R3 & 54.3 & 40.6 & \textbf{33.5} & 26.1 & 0.64 & $-7.1\ [-7.8, -6.3]$ \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{The models network beats the baseline clearly} at both rungs and with both
+    GRACE products (Table~\ref{tab:g1}); no interval comes near zero. Its ensemble mean
+    follows GRACE's real detail (correlation 0.73 at R2 and 0.64 at R3, against 0.17 and 0.29
+    for \code{spectral-gauss}).
+  \item \textbf{More models help.} At R2 on land-only DDK5, the WaterGAP-only network scored
+    28.0\,mm; the ten-model network scores 24.0\,mm.
+  \item \textbf{Full GRACE.} With ocean and ice included, the models network still beats
+    \code{spectral-gauss} at R3: 41.0 against 48.7\,mm, $-7.7\ [-8.9, -6.6]$. In Phase 1 only
+    the network trained on GRACE at R3 (the oracle) did that. At R2 the margin is small
+    (44.3 against 45.9\,mm, $-1.6\ [-2.7, -0.8]$): there the ocean and ice detail, which the
+    models never show, dominates.
+  \item \textbf{The model-to-GRACE gap} is 8--10\,mm (\code{models} against
+    \code{grace-land}). It is smaller than the gain over the baseline, but not small.
+  \item \textbf{The spread is too narrow.} Spread/error is 0.64--0.67 and the 90\% interval
+    covers about 72--76\% of the truth. The GRACE-trained network is also too narrow
+    (0.67--0.81), so part of this is the method, not only the mismatch.
+\end{itemize}
+
+\textbf{Verdict.} G1 is passed on skill and failed on calibration. Detail learned from
+hydrological models does carry over to real GRACE at scales where GRACE can check it, which
+octave transfer never achieved. Before the cascade to degree 128, the spread must be fixed.
+First try cheap fixes on the existing networks (sampler settings, spread inflation fitted on
+validation years). Then G2 (leave one model out) at the target scales.
+
 \section{Conclusion}
 Octave transfer, as tested here, is not a sound basis for sharpening GRACE below its
 resolution: skill learned at coarse scales does not carry to finer ones, on GRACE or on clean
 model data, and the models' uncertainty does not widen to warn of it. Detail at a given scale
-is, however, learnable from data at that scale. We therefore propose to learn the sub-GRACE
-detail from several hydrological models, keep GRACE's coarse picture exactly through the
-consistency projection, and test the result first against GRACE itself at observable scales
-(G1) and against held-out models at the target scales (G2).
+is, however, learnable from data at that scale. We therefore learn the sub-GRACE detail from
+several hydrological models and keep GRACE's coarse picture exactly through the consistency
+projection. The first test (G1, Section~\ref{sec:g1}) is encouraging. Trained on ten ISIMIP3a
+models and applied to real GRACE, the network beats the baseline by 7--10\,mm CRPS at
+scales GRACE can check, but its uncertainty is too narrow. Next: fix the spread, then test on
+held-out models at the target scales (G2).
 
 \section{Not yet done}
 \begin{itemize}
@@ -649,6 +729,9 @@ consistency projection, and test the result first against GRACE itself at observ
   \item Diagnostic: \code{scripts/diagnose\_sampler.py}.
   \item Phase 1b: \code{scripts/phase1b\_noise.sh} (commit \code{c78433c}).
   \item Phase 1c: \code{scripts/phase1c\_twin.sh} (commit \code{c76b8d6}).
+  \item G1 data: \code{python -m grace\_diffusion.fetch data/raw isimip}, then\\
+    \code{python -m grace\_diffusion.prep data/raw data/proc isimip grace\_land}.
+  \item G1 runs: \code{scripts/g1\_models.sh} (commit \code{1626e77}).
   \item Scores: \code{runs/eval/*.csv}, one row per method, rung and month.
   \item Figures: \code{reports/phase1/make\_figures.py}.
 \end{itemize}
