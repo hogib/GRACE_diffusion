@@ -2,7 +2,7 @@
 
 A method is a callable (c, L, members, rng, Lin) -> ensemble of target grids (M, 4L, 8L)
 in mm, where c is one month's (rotated) EWH coefficients and Lin the input degree. With a
-target dataset (paired scoring, design doc §7.2), c is spliced: degrees below Lin from the
+target dataset (paired scoring, design doc Appendix B.5), c is spliced: degrees below Lin from the
 input dataset, the rest from the target dataset. Scores are per month, on the
 added detail band, weighted by pixel area x region mask; results are written per month so
 that paired comparisons (block bootstrap over months) can be made later.

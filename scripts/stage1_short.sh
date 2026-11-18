@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage 1, short first pass (design doc §7.3): does fine-tuning on real GRACE help, and how much
+# Paired experiment, short first pass (design doc Appendix B.5): does fine-tuning on real GRACE help, and how much
 # does the GRACE / WaterGAP amplitude mismatch hurt? Uses the existing ten-model network.
 #   B' : fine-tune runs/isimip10-r23 on paired months     D : paired months only, from scratch
 set -u

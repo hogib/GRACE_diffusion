@@ -10,7 +10,7 @@ octaves). A sample is built from one month's EWH coefficients:
 Arrays have shape (1, 4L, 8L), float32. Batches are always a single step, because the
 grid size depends on L.
 
-Paired samples (design doc §7.1) take the input from one dataset and the detail from another:
+Paired samples (the paired experiment, design doc Appendix B.5) take the input from one dataset and the detail from another:
 the month's coefficients are spliced, degrees below Lin from the input dataset (GRACE) and
 degrees from Lin upward from the target dataset (WaterGAP), and then treated as above. The
 input is then exactly the blurred GRACE field, and the target is consistent with it.

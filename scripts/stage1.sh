@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage 1 (design doc §7.3): the paired design at coarse scales, where GRACE can check it.
+# Stage 1 of the paired experiment (design doc Appendix B.5; not pursued): the paired design at coarse scales, where GRACE can check it.
 #   pre-train on WaterGAP alone, fine-tune on paired months (land-only GRACE in, WaterGAP
 #   detail out), score on the paired validation months (2015-01 .. 2017-06).
 #
