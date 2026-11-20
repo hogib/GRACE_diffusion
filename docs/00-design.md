@@ -557,3 +557,24 @@ that factor on the validation months 2015–2017-06: CRPS 14.8 / 30.0 (from 15.4
 spread/error 0.77 / 0.80, 90% coverage 0.80 / 0.82. The margin GRACE needs over the models is
 about 30% for this network (10–20% for the plain one), and the fitted factor again falls short
 on the later months.
+
+**B.8 Spread from input uncertainty** (`scripts/wall_noise.sh`, 2026-11-20; no training). Each
+member's GRACE input is perturbed with the month's formal coefficient errors (DDK5-filtered,
+land-masked like the data) times a factor; only the generated detail is kept and added to the
+true input. Land-only GRACE DDK5, validation months 2015-01 to 2017-06; R2 / R3.
+
+| setting | all inputs: CRPS | spread/error | no extras: CRPS | spread/error |
+|---|---|---|---|---|
+| no calibration | 15.4 / 31.1 | 0.59 / 0.62 | 18.5 / 33.2 | 0.80 / 0.72 |
+| noise factor 1 | 15.0 / 30.5 | 0.72 / 0.74 | 18.5 / 32.6 | 0.91 / 0.83 |
+| noise factor 2 | 15.7 / 31.3 | 0.91 / 0.93 | 19.3 / 33.3 | 1.05 / 1.00 |
+| noise factor 4 | 18.3 / 35.8 | 1.28 / 1.32 | 21.9 / 37.2 | 1.37 / 1.35 |
+| spread factor 1.3 only | 14.8 / 30.0 | 0.77 / 0.80 | | |
+| noise factor 1 + spread factor fitted on 2002–2014 | 14.8 / 30.1 | 0.87 / 0.85 | 18.5 / 32.5 | 1.04 / 0.87 |
+
+(Spread factors for the last row: 1.2 / 1.15 with all inputs, 1.15 / 1.05 without extras.) On
+the fitting months (2002–2014) noise factor 2 gives spread/error 0.97 / 1.11 for both networks.
+The last row is the first setting, fitted on earlier months, that meets both criteria on later
+ones. The networks are sensitive to input errors of the size of GRACE's formal errors; they
+were trained on noise-free model fields. Next: training with GRACE-like input noise
+(`train --input-noise`, `data.NoiseBank`, `scripts/noise_train.sh`).
