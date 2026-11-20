@@ -51,8 +51,10 @@ reproduce the detail of one model for the same month as the GRACE input improves
 with that model but worsens the agreement with the detail GRACE observes, and is therefore not
 pursued. The hydrological models' own fields for a month predict the observed detail less well
 than the network does, but improve it when combined with it, and reusing the initial noise of
-each ensemble member across months yields members that are coherent in time. Extensions of the
-network with further inputs are under test. We describe the method, the evidence, an
+each ensemble member across months yields members that are coherent in time. Of four kinds of
+additional input tested, the land mask with latitude, the models' seasonal cycle and the
+models' fields for the month improve the score by 1 to 4\,mm, whereas the GRACE fields of
+earlier months do not; the additional inputs make the ensembles narrower. We describe the method, the evidence, an
 evaluation in five levels ending with
 independent data over Türkiye, the further work, and the limits of what can be claimed for
 scales that GRACE does not resolve.
@@ -102,7 +104,7 @@ and the output is an ensemble of fields limited to degree $L = 128$
 degree $0.8L$ and falling to 0 at degree $L$. The detail to be generated is the difference
 between the field limited to $L$ and the field limited to $L_\mathrm{in}$. In its basic
 form the method uses no input other than the GRACE field of the month, and months are treated
-independently; extensions are described in Section~\ref{sec:ext}.
+independently; additional inputs are described in Section~\ref{sec:ext}.
 
 \begin{figure}[ht]
   \centering
@@ -166,19 +168,21 @@ stated as such.
 The target is degree 128. It may be reached in one step (32 to 128) or in two single-octave
 steps (32 to 64 and 64 to 128); the choice will be made by experiment on model data.
 
-\subsection{Extensions under test}\label{sec:ext}
-The basic form conditions on a single GRACE field. The results of Section~\ref{sec:month}
-indicate that further inputs can add information, and the network has been extended to accept
-additional input fields alongside the GRACE field. Five variants are being trained at the
-scales GRACE resolves and will be scored against GRACE's own detail: the GRACE field of earlier
+\subsection{Additional inputs}\label{sec:ext}
+The network can be given further input fields alongside the GRACE field. Four kinds were
+tested at the scales GRACE resolves (Section~\ref{sec:extres}): the GRACE field of earlier
 months (lags of 1, 2, 3, 6 and 12 months); the mean detail of the hydrological models for the
 same month, each model being excluded from its own input during training; the models' mean
-seasonal cycle of the detail, which unlike the previous input is available for any month; the
-land mask and the latitude; and all of these together. In training, each group of additional
-inputs is withheld at random in 15\% of the samples, so that the network remains usable when
-an input is missing. Results are not yet available. Inputs derived from model simulations of
-the month in question would restrict the product to the period covered by those simulations
-(to 2019 for the present data) and make it dependent on their meteorological forcing.
+seasonal cycle of the detail; and the land mask together with the latitude. In training, each
+group of additional inputs is withheld at random in 15\% of the samples, so that the network
+remains usable when an input is missing.
+
+On the evidence of these tests we propose to adopt the land mask, the latitude and the models'
+seasonal cycle as standard inputs: they improve the agreement with GRACE and are available for
+every month. The models' fields for the month give the largest improvement but exist only for
+the period of the simulations (to 2019 for the present data) and make the product dependent on
+their meteorological forcing; whether they are admitted is a matter for decision
+(Section~\ref{sec:decide}). The fields of earlier months are not retained.
 
 \section{Data}
 
@@ -351,7 +355,7 @@ ten-model mean detail, with weights fitted on one half of the months and applied
 the score improves by 2.2\,mm (1.9 to 2.4) and 1.0\,mm (0.9 to 1.2), in 22 and 21 of the 22
 months. The weight of the model detail falls from about 0.55 at degrees 8 to 16 to about 0.35
 at degrees 16 to 32, so the benefit may be small at the target scales. This result motivates
-the second and third extensions of Section~\ref{sec:ext}.
+the tests with model-derived inputs in Section~\ref{sec:extres}.
 
 The scaling experiments also clarify the difference in amplitude between GRACE and the models.
 A gain fitted per location, such that the model field limited to the input degree matches the
@@ -370,8 +374,7 @@ the detail observed by GRACE (Table~\ref{tab:time}). Using the same initial nois
 in every month brings both the size of the change and the correlation between consecutive
 months close to the observed values, and leaves the score unchanged within its uncertainty
 (22.1 against 22.7\,mm and 28.9 against 29.9\,mm, with eight members). No temporal model is
-required for this purpose; whether earlier months improve accuracy is tested by the first
-extension of Section~\ref{sec:ext}.
+required for this purpose.
 
 \begin{table}[ht]
 \centering\small
@@ -391,6 +394,67 @@ detail and for single ensemble members of the model-trained network.}
   \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Additional inputs}\label{sec:extres}
+Five networks with the additional inputs of Section~\ref{sec:ext} were trained on the ten
+models at degrees 8 to 16 and 16 to 32 and scored against GRACE's own detail in two periods
+(Table~\ref{tab:ext}). In the second period no model simulations exist, so the input holding
+the models' fields for the month is empty there.
+
+\begin{table}[ht]
+\centering\small
+\caption{Additional inputs: CRPS (mm) against GRACE's own detail, and the difference to the
+network without additional inputs with its 95\% interval. Upper part: 22 months, January 2015
+to June 2017. Lower part: 36 months, 2020--2022.}
+\label{tab:ext}
+\begin{tabular}{lrcrc}
+  \toprule
+  & \multicolumn{2}{c}{degrees 8 to 16} & \multicolumn{2}{c}{degrees 16 to 32} \\
+  \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  additional input & CRPS & difference & CRPS & difference \\
+  \midrule
+  none & 18.5 & & 33.2 & \\
+  earlier months & 18.8 & $+0.3\ [-0.4, +0.5]$ & 33.2 & $\phantom{+}0.0\ [-0.4, +0.5]$ \\
+  models' fields for the month & 15.6 & $-3.0\ [-3.4, -2.7]$ & 31.8 & $-1.4\ [-2.2, -1.1]$ \\
+  models' seasonal cycle & 17.8 & $-0.7\ [-1.3, -0.4]$ & 32.7 & $-0.6\ [-1.0, -0.4]$ \\
+  land mask and latitude & 16.8 & $-1.7\ [-2.3, -1.6]$ & 31.2 & $-2.0\ [-2.6, -1.4]$ \\
+  all & 15.4 & $-3.1\ [-3.8, -2.8]$ & 31.1 & $-2.1\ [-2.8, -2.0]$ \\
+  \midrule
+  none & 22.6 & & 29.8 & \\
+  earlier months & 22.0 & $-0.6\ [-1.2, +0.1]$ & 29.6 & $-0.2\ [-0.6, +0.1]$ \\
+  models' seasonal cycle & 21.0 & $-1.6\ [-2.2, -1.0]$ & 28.6 & $-1.2\ [-1.6, -0.8]$ \\
+  land mask and latitude & 18.8 & $-3.8\ [-4.3, -3.4]$ & 28.4 & $-1.4\ [-1.9, -1.1]$ \\
+  all (monthly model fields absent) & 19.6 & $-3.0\ [-3.3, -2.6]$ & 27.3 & $-2.5\ [-2.9, -2.1]$ \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+The GRACE fields of earlier months give no measurable improvement in either period. The
+models' fields for the month give the largest improvement where they exist, exceeding at
+degrees 8 to 16 the simple combination of Section~\ref{sec:month} (15.6 against 16.5\,mm). The
+land mask with the latitude improves the score in both periods, and the models' seasonal cycle
+by a smaller but consistent amount. The network with all inputs is the best or close to the
+best, and remains so when the monthly model fields are absent, which shows that withholding
+inputs at random during training has the intended effect.
+
+Two consequences were examined. First, a network that receives the land mask and the latitude
+can identify the region over Türkiye that is excluded from training, and might behave
+differently there. On held-out years of two hydrological models, where the truth is known
+inside the region, the networks with these inputs improve on the network without them by
+similar amounts inside the region and outside it, with one exception (no improvement at
+degrees 16 to 32 for one of the two models). The exclusion of the region therefore remains
+compatible with these inputs. All networks are over-dispersed inside the region (ratio of
+spread to error between 1.0 and 1.9).
+
+Second, the additional inputs reduce the ensemble spread more than the error. For the network
+with all inputs the ratio of spread to error against GRACE is 0.59 and 0.62 in the first
+period, against 0.80 and 0.72 without additional inputs. On held-out years of the models the
+same network is calibrated without correction (1.01 and 1.00). A spread factor of 1.3 fitted
+on GRACE months from 2002 to 2014 raises the ratio in the first period to 0.77 and 0.80 and
+improves the score to 14.8 and 30.0\,mm, but does not reach the calibrated range. The
+confidence that the network derives from model-based inputs is thus justified on model data
+and not on GRACE, and the margin that GRACE requires over the models (Section~\ref{sec:calib})
+is about 30\% for this network, against 10--20\% without additional inputs.
 
 \section{Evaluation}\label{sec:eval}
 
@@ -436,9 +500,11 @@ to a stated degree.
 \section{Further work}\label{sec:plan}
 
 The second evaluation level is complete for DDK5-filtered and unfiltered GRACE in the basic
-form of the method, and the extensions of Section~\ref{sec:ext} are being trained and scored
-at that level. Their outcome decides which inputs the networks for the target scales receive.
-The remaining work is as follows.
+form of the method and, for DDK5-filtered GRACE, with the additional inputs of
+Section~\ref{sec:ext}. A calibration in which each ensemble member is generated from a GRACE
+input perturbed with the formal errors of the monthly solution, so that the spread reflects
+the uncertainty of the input, is being examined as a complement to the spread factor. The
+remaining work is as follows.
 
 First, the networks for the target scales are trained on the ten models, in one step and in
 two, and evaluated at the first level. Global grids at degree 128 do not fit the memory of the
@@ -484,12 +550,15 @@ cause of the remaining deficit in ensemble spread. The proposed calibration comp
 by an empirical margin and does not remove it. The disagreement is not a matter of amplitude
 alone (Section~\ref{sec:month}): part of the variance observed by GRACE at these scales has no
 counterpart in the models, and a method that learns from the models cannot reproduce it.
+Inputs derived from the models improve the agreement with GRACE but increase the
+over-confidence of the ensembles on GRACE (Section~\ref{sec:extres}), so that calibration
+becomes more important as such inputs are added.
 
 The product is defined over land outside the ice sheets. The strength of the final validation
 depends on independent data for Türkiye that have not yet been secured, and the comparison
 with GLWS2.0 cannot establish correctness.
 
-\section{Points for decision}
+\section{Points for decision}\label{sec:decide}
 
 \begin{enumerate}
   \item Independent data for the Türkiye region (groundwater levels, GNSS loading, basin
@@ -498,9 +567,10 @@ with GLWS2.0 cannot establish correctness.
     models with GSWP3-W5E5).
   \item The GRACE product and filter used as input: ITSG with DDK5 filtering, or unfiltered.
   \item The target resolution: degree 128 (about 160\,km), or finer at a later stage.
-  \item Whether inputs other than GRACE are acceptable, in particular hydrological-model
-    fields for the month in question, which improve the agreement with GRACE at the scales
-    tested but tie the product to the period and the forcing of the simulations.
+  \item Whether inputs other than GRACE are acceptable: static fields and the models' seasonal
+    cycle, which we propose to adopt, and hydrological-model fields for the month in question,
+    which give the largest improvement at the scales tested but tie the product to the period
+    and the forcing of the simulations.
   \item Whether the limited claim formulated at the end of Section~\ref{sec:eval} is an
     acceptable aim for the work.
 \end{enumerate}
