@@ -80,7 +80,7 @@ def test_training_and_scoring_with_extra_channels(tmp_path, monkeypatch):
             for k in range(3)}
     monkeypatch.setattr(prep, "load", lambda proc, name: sets[name])
     bank = data.ModelBank(sets, 8, clim_years=("1984", "1989"))
-    monkeypatch.setattr(data.ModelBank, "load", classmethod(lambda cls, proc, lmax, pattern="": bank))
+    monkeypatch.setattr(data.ModelBank, "load", classmethod(lambda cls, proc, lmax, pattern="", exclude=(): bank))
     out = tmp_path / "x"
     train.main(["--dataset", ",".join(sets), "--kind", "twin", "--rungs", "8", "--base", "8",
                 "--mults", "1,2", "--blocks", "1", "--batch", "2", "--workers", "0", "--val-every", "2",

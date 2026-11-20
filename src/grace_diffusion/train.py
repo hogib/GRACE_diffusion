@@ -66,7 +66,7 @@ def build_noise_bank(proc, raw, dataset: str, rungs, n: int = 512, seed: int = 0
 
 def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: str | None = None,
                   extras: data.Extras | None = None, noise_bank: data.NoiseBank | None = None,
-                  noise_max: float = 0.0):
+                  noise_max: float = 0.0, bank_exclude=()):
     """Train and validation samplers; `datasets` is one name or a comma-separated list.
 
     target: dataset supplying the detail (paired samples); the datasets then supply the input.
@@ -75,7 +75,8 @@ def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: st
     tr, va = [], []
     bank = None
     if extras is not None and extras.needs_bank:
-        bank = data.ModelBank.load(proc, max(L for L, _ in (data.as_step(r) for r in rungs)))
+        bank = data.ModelBank.load(proc, max(L for L, _ in (data.as_step(r) for r in rungs)),
+                                   exclude=bank_exclude)
     ex = dict(extras=extras, bank=bank)
     tm, tc = prep.load(Path(proc), target) if target else (None, None)
     for name in datasets.split(","):
@@ -151,6 +152,9 @@ def main(argv=None):
     p.add_argument("--noise-dataset", default="grace_ddk5_land",
                    help="GRACE dataset whose processing and amplitude the input noise follows")
     p.add_argument("--raw", default="data/raw")
+    p.add_argument("--bank-exclude", default="",
+                   help="comma-separated datasets kept out of the 'models'/'clim' inputs "
+                        "(a model withheld from training must not leak in through them)")
     p.add_argument("--extras-drop", type=float, default=0.15,
                    help="probability of zeroing each group of extra channels in training")
     p.add_argument("--model", choices=["diffusion", "regress"], default="diffusion")
@@ -183,13 +187,14 @@ def main(argv=None):
     extras = data.parse_extras(a.extras, a.extras_drop)
     bank = build_noise_bank(a.proc, a.raw, a.noise_dataset, rungs) if a.input_noise > 0 else None
     train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target, extras,
-                                   bank, a.input_noise)
+                                   bank, a.input_noise,
+                                   tuple(x for x in a.bank_exclude.split(",") if x))
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
                blocks=a.blocks, dropout=a.dropout, rungs=a.rungs, dataset=a.dataset,
                target=a.target, kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean,
                p_std=a.p_std, sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch,
                lr=a.lr, init=a.init, input_noise=a.input_noise, noise_dataset=a.noise_dataset,
-               extras=a.extras, extras_drop=a.extras_drop, extra_ch=extras.n)
+               bank_exclude=a.bank_exclude, extras=a.extras, extras_drop=a.extras_drop, extra_ch=extras.n)
     init = None
     if a.init:
         # fine-tuning: keep the network and its preconditioning scale; the model type must match

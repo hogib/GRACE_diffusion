@@ -119,11 +119,12 @@ class ModelBank:
             self.clim[n] = cm - cm.mean(0, keepdims=True)
 
     @classmethod
-    def load(cls, proc, lmax: int, pattern: str = "isimip_*.npz") -> "ModelBank":
+    def load(cls, proc, lmax: int, pattern: str = "isimip_*.npz", exclude=()) -> "ModelBank":
+        """exclude: dataset names left out of the bank entirely (a model withheld from training)."""
         from pathlib import Path
 
         from . import prep
-        names = sorted(f.stem for f in Path(proc).glob(pattern))
+        names = sorted(f.stem for f in Path(proc).glob(pattern) if f.stem not in set(exclude))
         if not names:
             raise FileNotFoundError(f"no {pattern} in {proc}")
         return cls({n: prep.load(Path(proc), n) for n in names}, lmax)
