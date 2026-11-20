@@ -91,3 +91,33 @@ def test_training_and_scoring_with_extra_channels(tmp_path, monkeypatch):
     rows = evaluate.run({"net": m}, "isimip_m0", "twin", "val", (8,), 2, "global", tmp_path / "s.csv",
                         max_months=2)
     assert len(rows) == 2 and all(r["consistency"] < 1e-6 for r in rows)
+
+
+def test_input_noise_widens_spread_and_keeps_the_input(tmp_path):
+    import numpy as np
+    import torch
+
+    from grace_diffusion import evaluate, sh
+    from grace_diffusion.train import build
+    from tests.test_sh import random_coeffs
+    cfg = dict(model="diffusion", base=8, mults=[1, 2], blocks=1, dropout=0.0, sigma_data=1.0,
+               p_mean=-0.4, p_std=1.6, sigma_max=20.0)
+    torch.manual_seed(0)
+    torch.save({"cfg": cfg, "ema": build(cfg).state_dict()}, tmp_path / "m.pt")
+
+    class Noise:
+        def draw(self, month, rng):
+            return random_coeffs(8, seed=int(rng.integers(1 << 30))) if month == "2010-01" else None
+
+    c = random_coeffs(8, seed=0)
+    inp = sh.synth(sh.lowpass(c, 4), 8)
+    ctx = {"month": "2010-01", "noise_seed": (0, 8, 4)}
+    plain = evaluate.model_method(tmp_path / "m.pt", device="cpu", steps=3)(
+        c, 8, 4, np.random.default_rng(0), 4, ctx)
+    m = evaluate.model_method(tmp_path / "m.pt", device="cpu", steps=3, input_noise=Noise(), noise_scale=1.0)
+    noisy = m(c, 8, 4, np.random.default_rng(0), 4, ctx)
+    for e in noisy:                                  # coarse degrees are still the true input's
+        np.testing.assert_allclose(sh.project_consistent(inp, e, 4), e, atol=1e-6)
+    assert np.abs(noisy - plain).max() > 1e-6        # the perturbation changed the detail
+    same = m(c, 8, 4, np.random.default_rng(0), 4, {**ctx, "month": "2011-01"})   # no errors: unperturbed
+    np.testing.assert_allclose(same, plain, atol=1e-5)

@@ -45,6 +45,59 @@ def build_grace(raw: Path, out: Path) -> None:
                  coeffs=arr[:, :, :k, :k].astype(np.float32), source=np.array(s.source))
 
 
+def build_grace_sigma(raw: Path, out: Path, lmax: int = 120) -> None:
+    """Formal errors of the monthly solutions as EWH coefficients (mm), unfiltered, to lmax.
+
+    Written as grace_sigma.npz (months, sigma). Used to perturb the GRACE input of ensemble
+    members (GraceNoise); degrees 0 and 1 are zero, as in the fields.
+    """
+    import pyshtools as pysh
+
+    months, sig = [], []
+    for name in ("itsg2018", "itsg_operational"):
+        for f in sorted(Path(raw, name, f"n{lmax}").glob("*.gfc")):
+            _c, _gm, _r0, err = pysh.shio.read_icgem_gfc(str(f), lmax=lmax, errors="formal")
+            months.append(f.stem)
+            sig.append(sh.to_ewh(err))
+    order = np.argsort(months)
+    sig = np.array(sig)[order]
+    sig[:, :, :2, :] = 0.0
+    np.savez(out / "grace_sigma.npz", months=np.array(months)[order], sigma=sig.astype(np.float32))
+
+
+class GraceNoise:
+    """Draws of GRACE's coefficient noise, processed like a GRACE dataset.
+
+    A draw is independent Gaussian noise with the month's formal errors, passed through the
+    DDK5 filter (for 'ddk5' datasets) and the land-only masking (for '_land' datasets), both
+    of which are linear, and truncated to the dataset's degree.
+    """
+
+    def __init__(self, proc: Path, raw: Path, dataset: str, lmax: int = 64, grid_L: int = 64):
+        from . import grids
+
+        d = np.load(Path(proc) / "grace_sigma.npz")
+        self.sigma = {str(m): s for m, s in zip(d["months"], d["sigma"])}
+        self.ddk = sh.DDKFilter.named("DDK5", Path(raw) / "ddk") if "ddk5" in dataset else None
+        self.lmax, self.grid_L = lmax, grid_L
+        self.mask = None
+        if dataset.endswith("_land"):
+            self.mask = grids.land_mask(grid_L, None, str(proc)) * grids.loss_mask(
+                grid_L, None, hold_out_test_box=False, mask_ice=True, margin_km=0.0)
+
+    def draw(self, month: str, rng: np.random.Generator) -> np.ndarray | None:
+        if month not in self.sigma:
+            return None
+        n = rng.standard_normal(self.sigma[month].shape) * self.sigma[month]
+        if self.ddk is not None:
+            n = self.ddk(n)
+        n = n[:, : self.lmax + 1, : self.lmax + 1]
+        if self.mask is not None:
+            n = sh.analyse(sh.synth(n, self.grid_L) * self.mask, lmax=self.lmax)
+        n[:, :2, :] = 0.0
+        return n
+
+
 def watergap_to_dh(field: np.ndarray) -> np.ndarray:
     """WaterGAP 0.5° cell-centred grid (lat 89.75…-89.75, lon -179.75…179.75) to a DH
     grid of 360 × 720 (lat 90…-89.5, lon 0…359.5).
@@ -170,6 +223,8 @@ if __name__ == "__main__":
         build_twin(raw, out)
     if "isimip" in which:
         build_isimip(raw, out)
+    if "grace_sigma" in which:
+        build_grace_sigma(raw, out)
     if "grace_land" in which:
         for name in ("grace_ddk5", "grace_raw"):
             land_only(out, name, f"{name}_land")

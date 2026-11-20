@@ -60,7 +60,7 @@ def score_month(method: Method, c: np.ndarray, L: int, members: int, rng: np.ran
 def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: tuple,
         members: int, region: str, out_csv: Path, proc: Path = Path("data/proc"),
         seed: int = 0, rotate: str = "none", max_months: int = 0,
-        target: str | None = None) -> list[dict]:
+        target: str | None = None, stride: int = 1) -> list[dict]:
     """rungs: steps (L or (L, Lin)). target: dataset supplying the detail (paired scoring)."""
     months, coeffs = prep.load(proc, dataset)
     tgt = None
@@ -75,6 +75,7 @@ def run(methods: dict[str, Method], dataset: str, kind: str, split: str, rungs: 
             j = pos.get(data.month_shift(months[i], lag))
             return None if j is None else coeffs[j]
         return get
+    idx = idx[::stride]
     if max_months:
         idx = idx[:max_months]
     rot = sh.rotation_to_equator(*grids.TEST_BOX.centre) if rotate == "test_box" else None
@@ -133,12 +134,17 @@ def baseline_methods(coeffs: np.ndarray, train_idx: np.ndarray, max_L: int) -> d
 
 def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
                  project: bool = True, chunk: int = 32, churn: float = 0.0,
-                 inflate: float | dict[int, float] = 1.0, chain: bool = False) -> Method:
+                 inflate: float | dict[int, float] = 1.0, chain: bool = False,
+                 input_noise=None, noise_scale: float = 0.0) -> Method:
     """A trained checkpoint as a Method: diffusion samples M members, regress returns 1.
 
     churn: stochastic sampler (see EDM.sample). inflate: stretch each member away from the
     ensemble mean by this factor (one value, or one per target degree L). The projection is
     linear and all members share the input's coarse degrees, so inflation keeps them exact.
+    input_noise, noise_scale: each member is generated from its own perturbed input, the input
+    plus noise_scale times a draw of input_noise.draw(month, rng) (e.g. prep.GraceNoise). Only
+    the generated detail is kept: it is added to the unperturbed input and projected onto it,
+    so the coarse degrees stay exactly those of the input.
     chain: a step spanning several octaves (e.g. 8-32) is generated one octave at a time, each
     member's output feeding the next step; otherwise it is generated in one pass.
     Members are generated in the normalised units of training (input / area RMS of input),
@@ -211,7 +217,19 @@ def model_method(ckpt: str | Path, device: str | None = None, steps: int = 32,
                 ens = generate(nxt, 2 * Lk, Lk, g)
                 Lk *= 2
         else:
-            ens = generate(np.repeat(inp[None], m, axis=0), L, Lin, g, extra)
+            inps = np.repeat(inp[None], m, axis=0)
+            noisy = input_noise is not None and noise_scale > 0 and ctx is not None and m > 1
+            if noisy:
+                for j in range(m):
+                    n = input_noise.draw(ctx["month"], rng)
+                    if n is None:
+                        noisy = False
+                        break
+                    inps[j] = inp + noise_scale * sh.synth(sh.lowpass(n[:, : L + 1, : L + 1], Lin), L)
+            ens = generate(inps, L, Lin, g, extra)
+            if noisy:       # keep the detail, restore the true input
+                ens = np.stack([sh.project_consistent(inp, inp + (e - x), Lin) if project
+                                else inp + (e - x) for e, x in zip(ens, inps)])
         k = inflate.get(L, 1.0) if isinstance(inflate, dict) else inflate
         if k != 1.0 and len(ens) > 1:
             mean = ens.mean(0)
@@ -250,6 +268,9 @@ def main(argv=None):
     p.add_argument("--churn", type=float, default=0.0, help="stochastic sampler (EDM S_churn)")
     p.add_argument("--inflate", default="1", help="spread factor: '1.4' or per rung '16:1.4,32:1.5'")
     p.add_argument("--max-months", type=int, default=0, help="score only the first N months")
+    p.add_argument("--stride", type=int, default=1, help="score every n-th month of the split")
+    p.add_argument("--input-noise", type=float, default=0.0,
+                   help="perturb each member's input with GRACE's formal errors times this factor")
     a = p.parse_args(argv)
     inflate = parse_inflate(a.inflate)
     rungs = data.parse_steps(a.rungs)
@@ -259,12 +280,14 @@ def main(argv=None):
     if a.baselines:
         methods.update(baseline_methods(coeffs, data.split_months(months, a.kind, "train"),
                                         max(L for L, _ in rungs)))
+    noise = prep.GraceNoise(Path("data/proc"), Path("data/raw"), a.dataset) if a.input_noise > 0 else None
     for spec in a.ckpt:
         name, path = spec.split("=", 1)
         methods[name] = model_method(path, steps=a.steps, chunk=a.chunk, churn=a.churn,
-                                     inflate=inflate, chain=name.startswith("chain"))
+                                     inflate=inflate, chain=name.startswith("chain"),
+                                     input_noise=noise, noise_scale=a.input_noise)
     rows = run(methods, a.dataset, a.kind, a.split, rungs, a.members, a.region, Path(a.out),
-               rotate=a.rotate, max_months=a.max_months, target=a.target)
+               rotate=a.rotate, max_months=a.max_months, target=a.target, stride=a.stride)
     print(summarise(rows))
 
 
