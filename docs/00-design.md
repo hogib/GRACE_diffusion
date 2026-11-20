@@ -532,3 +532,28 @@ help in both periods and need no model run. Everything together is best or close
 its spread is the narrowest. With geographic inputs the network can tell where it is, so the
 held-out Türkiye box becomes a region it has never been trained on *and can recognise*; before
 relying on such inputs for the Türkiye test, the box hold-out has to be reconsidered (§10).
+
+*Checks on these networks* (`scripts/wall_checks.sh`, 2026-11-20).
+
+Inside the held-out Türkiye box, on model data (WaterGAP and H08, 18 held-out months, 16
+members; CRPS in mm, R2 / R3):
+
+| | none | geo | all |
+|---|---|---|---|
+| WaterGAP, land outside the box | 6.1 / 8.1 | 5.1 / 7.0 | 3.4 / 4.7 |
+| WaterGAP, inside the box | 6.2 / 6.9 | 5.2 / 6.9 | 3.8 / 4.8 |
+| H08, land outside the box | 6.5 / 8.7 | 5.5 / 7.3 | 3.9 / 5.5 |
+| H08, inside the box | 6.8 / 6.8 | 5.8 / 5.8 | 3.5 / 4.7 |
+
+The networks with geographic inputs do not break down inside the box: their gains over the
+plain network are of the same order inside as outside (one exception: no gain for geo at R3 on
+WaterGAP). All three networks are over-dispersed inside the box (spread/error 1.0–1.9). The
+large gain of "all" on model data reflects that the other models share the forcing; against
+GRACE it is far smaller (above).
+
+Spread of the "all" network: on held-out model years it is calibrated without any factor
+(spread/error 1.01 / 1.00); on GRACE 2002–2014 it is 0.75 / 0.77 and needs a factor of 1.3. With
+that factor on the validation months 2015–2017-06: CRPS 14.8 / 30.0 (from 15.4 / 31.1),
+spread/error 0.77 / 0.80, 90% coverage 0.80 / 0.82. The margin GRACE needs over the models is
+about 30% for this network (10–20% for the plain one), and the fitted factor again falls short
+on the later months.
