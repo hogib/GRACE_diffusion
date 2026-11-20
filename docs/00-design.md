@@ -497,3 +497,38 @@ receives a gain of zero over most of the land.
 field, the other models' detail for the month, the models' seasonal climatology of the detail,
 land mask and latitude can each be switched on per run (`train --extras`). GRACE-only input is
 no longer a fixed decision (2026-11-18); these variants are tested at the coarse steps first.
+
+**B.7 Extra input channels** (`scripts/wall.sh`, runs 2026-11-18/19). Ten-model network at R2
+and R3 with extra inputs (60k steps each), land-only GRACE DDK5, against GRACE's own detail;
+stochastic sampler, shared noise, 32 members. CRPS in mm; differences to the network without
+extras ("none", retrained numbers 18.5 / 33.2 and 22.6 / 29.8) with 95% block-bootstrap
+intervals.
+
+2015-01 to 2017-06 (22 months; the models' fields for the month exist):
+
+| inputs | R2 | R2 − none | R3 | R3 − none | spread/error |
+|---|---|---|---|---|---|
+| none | 18.5 | | 33.2 | | 0.80 / 0.72 |
+| hist (lags 1, 2, 3, 6, 12) | 18.8 | +0.3 [−0.4, +0.5] | 33.2 | 0.0 [−0.4, +0.5] | 0.70 / 0.70 |
+| models (other models' detail for the month) | 15.6 | −3.0 [−3.4, −2.7] | 31.8 | −1.4 [−2.2, −1.1] | 0.72 / 0.68 |
+| clim (models' seasonal cycle of the detail) | 17.8 | −0.7 [−1.3, −0.4] | 32.7 | −0.6 [−1.0, −0.4] | 0.69 / 0.69 |
+| geo (land mask, latitude) | 16.8 | −1.7 [−2.3, −1.6] | 31.2 | −2.0 [−2.6, −1.4] | 0.74 / 0.69 |
+| all | 15.4 | −3.1 [−3.8, −2.8] | 31.1 | −2.1 [−2.8, −2.0] | 0.59 / 0.62 |
+
+2020 to 2022 (36 months; no model runs, so the "models" channel is empty):
+
+| inputs | R2 | R2 − none | R3 | R3 − none | spread/error |
+|---|---|---|---|---|---|
+| none | 22.6 | | 29.8 | | 0.74 / 0.72 |
+| hist | 22.0 | −0.6 [−1.2, +0.1] | 29.6 | −0.2 [−0.6, +0.1] | 0.55 / 0.60 |
+| models (channel empty) | 22.8 | +0.3 [−0.4, +0.7] | 29.3 | −0.5 [−1.0, −0.1] | 0.72 / 0.77 |
+| clim | 21.0 | −1.6 [−2.2, −1.0] | 28.6 | −1.2 [−1.6, −0.8] | 0.65 / 0.71 |
+| geo | 18.8 | −3.8 [−4.3, −3.4] | 28.4 | −1.4 [−1.9, −1.1] | 0.73 / 0.70 |
+| all (models channel empty) | 19.6 | −3.0 [−3.3, −2.6] | 27.3 | −2.5 [−2.9, −2.1] | 0.59 / 0.66 |
+
+Reading: earlier months add nothing measurable. The models' fields for the month help where
+they exist, about as much as the simple mix of B.6 at R3 and more at R2. Land mask and latitude
+help in both periods and need no model run. Everything together is best or close to best, but
+its spread is the narrowest. With geographic inputs the network can tell where it is, so the
+held-out Türkiye box becomes a region it has never been trained on *and can recognise*; before
+relying on such inputs for the Türkiye test, the box hold-out has to be reconsidered (§10).

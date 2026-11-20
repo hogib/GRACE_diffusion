@@ -10,15 +10,15 @@ Status words: **running**, **done**, **next**, **open** (not started), **dropped
 ## A. Being tested now: extra inputs to the network ("wall", `scripts/wall.sh`)
 
 Ten-model network at the coarse steps (8 → 16, 16 → 32), scored against GRACE's own detail.
-Reference without extras: 18.6 / 33.0 mm (2015–2017) and 22.6 / 29.8 mm (2020–2022).
+Reference without extras: 18.5 / 33.2 mm (2015–2017) and 22.6 / 29.8 mm (2020–2022). Results: design doc, Appendix B.7.
 
 | # | idea | status |
 |---|---|---|
-| A1 | **History**: the blurred map 1, 2, 3, 6 and 12 months earlier | running |
-| A2 | **Models' fields for the month**: the other models' detail for the same month. Exists only up to 2019 | running |
-| A3 | **Models' seasonal climatology** of the detail. Exists for any month | running |
-| A4 | **Land mask and latitude** | running |
-| A5 | **All of the above together** | running |
+| A1 | **History**: the blurred map 1, 2, 3, 6 and 12 months earlier | done: no measurable gain |
+| A2 | **Models' fields for the month**: the other models' detail for the same month. Exists only up to 2019 | done: −3.0 / −1.4 mm where the fields exist |
+| A3 | **Models' seasonal climatology** of the detail. Exists for any month | done: −0.7 to −1.6 mm |
+| A4 | **Land mask and latitude** | done: −1.7 to −3.8 mm, in both periods. Conflicts with the Türkiye hold-out (see design doc B.7) |
+| A5 | **All of the above together** | done: best or near best (−2.1 to −3.1 mm); narrowest spread (0.59–0.66) |
 
 ## B. Ideas of ours
 
@@ -34,7 +34,7 @@ Reference without extras: 18.6 / 33.0 mm (2015–2017) and 22.6 / 29.8 mm (2020�
 | B8 | **GNSS loading in Türkiye** as independent validation: turn our maps into predicted station heights and compare | validation at fine scales | depends on station data | open; ask about data from the earlier project |
 | B9 | **Leave one model out at the target scales** (design doc §7.1, level 3) | trust at fine scales; spread factor | several runs; needs patch training | open |
 | B10 | **Patch training** so degree-128 grids fit the 32 GB card | needed for anything at target scales | code | open |
-| B11 | **Temporal architecture** (attention over time, ConvLSTM) | accuracy | large | only if A1 shows a gain. Papers: stacked lags first; ConvLSTM and graphs added little |
+| B11 | **Temporal architecture** (attention over time, ConvLSTM) | accuracy | large | A1 showed no gain: low priority. Papers: stacked lags first; ConvLSTM and graphs added little |
 | B12 | **Paired months for calibration only**: use GRACE–model pairs to set amplitude or spread, not to change what detail is drawn | spread; amplitude | small | open |
 
 ## C. Ideas from the papers (agent's reading)
