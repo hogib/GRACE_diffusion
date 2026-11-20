@@ -48,6 +48,11 @@ def main():
         for ds in a.dataset.split(","):
             months, coeffs = prep.load(Path("data/proc"), ds)
             idx = data.split_months(months, a.kind, a.split)[:: a.stride][: a.months]
+            pos = {m: j for j, m in enumerate(months)}
+
+            def prev_of(i):
+                return lambda lag: (coeffs[pos[data.month_shift(months[i], lag)]]
+                                    if data.month_shift(months[i], lag) in pos else None)
             for L, Lin in data.parse_steps(a.rungs):
                 w = evaluate.region_weight(L, None, a.region)
                 t0 = time.time()
@@ -55,7 +60,8 @@ def main():
                     cc = coeffs[i][:, : L + 1, : L + 1].astype(np.float64)
                     truth = sh.synth(sh.lowpass(cc, L), L)
                     rng = np.random.default_rng([0, L, int(i)])
-                    ens = method(cc, L, a.members, rng, Lin)
+                    ens = method(cc, L, a.members, rng, Lin,
+                                 {"month": months[i], "name": ds, "prev": prev_of(i)})
                     mean = ens.mean(0)
                     for k in KS:
                         e = mean[None] + k * (ens - mean[None])
