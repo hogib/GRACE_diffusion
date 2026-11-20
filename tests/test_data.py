@@ -261,3 +261,25 @@ def test_extra_channels_rotate_with_the_field():
     rot = Rotation.from_euler("z", 90, degrees=True)
     a, b = smp.sample(5, 16, None), smp.sample(5, 16, rot)
     np.testing.assert_allclose(np.roll(a.inp[1], 32, axis=1), b.inp[1], atol=1e-4)   # 90 deg = 32 columns
+
+
+def test_input_noise_changes_the_input_but_not_the_detail():
+    months, coeffs = fake_series(n=24, start=1980, L=16)
+    rng = np.random.default_rng(0)
+    bank = data.NoiseBank(np.array([random_coeffs(8, seed=900 + k) for k in range(4)], dtype=np.float32),
+                          {8: np.full(4, 50.0)})
+    clean = data.Sampler(months, coeffs, "twin", "train", rungs=(16,), rotate="none")
+    noisy = data.Sampler(months, coeffs, "twin", "train", rungs=(16,), rotate="none",
+                         noise_bank=bank, noise_max=2.0)
+    a, b = clean.sample(3, 16, None, rng), noisy.sample(3, 16, None, np.random.default_rng(1))
+    da, db = (a.target - a.inp[:1]) * a.scale, (b.target - b.inp[:1]) * b.scale
+    np.testing.assert_allclose(da, db, atol=1e-3)                       # same detail in mm
+    diff = (b.inp[0] * b.scale - a.inp[0] * a.scale).astype(np.float64)
+    assert np.abs(diff).max() > 1e-2                                    # the input was perturbed
+    assert np.abs(sh.analyse(diff)[:, 8:]).max() < 1e-3                 # only below the input degree
+    # validation samples (no rng) stay clean
+    np.testing.assert_allclose(noisy.sample(3, 16, None).inp, a.inp, atol=1e-6)
+    # rotated: the noise turns with the field
+    rot = Rotation.from_euler("z", 90, degrees=True)
+    c = noisy.sample(3, 16, rot, np.random.default_rng(1))
+    np.testing.assert_allclose(np.roll(b.inp[0] * b.scale, 32, axis=1), c.inp[0] * c.scale, atol=1e-3)

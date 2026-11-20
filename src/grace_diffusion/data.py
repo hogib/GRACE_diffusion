@@ -148,6 +148,27 @@ class ModelBank:
         return self._mean_detail([self.clim[n][k] for n in self.names if n != exclude], Lin, L)
 
 
+class NoiseBank:
+    """Draws of GRACE-like input noise for training on model fields (ideas list B4).
+
+    coeffs: (K, 2, l+1, l+1) noise draws in mm, processed like the GRACE dataset
+    (prep.GraceNoise). ref[Lin][k]: RMS of the GRACE field of that draw's month limited to Lin.
+    A draw is scaled so that noise relative to the input is what it is for GRACE: models are
+    weaker than GRACE, so unscaled noise would be too strong for them.
+    """
+
+    def __init__(self, coeffs: np.ndarray, ref: dict[int, np.ndarray]):
+        self.coeffs, self.ref = coeffs, ref
+
+    def draw(self, rng: np.random.Generator, c: np.ndarray, Lin: int, fmax: float) -> np.ndarray:
+        """Noise coefficients (2, Lin+1, Lin+1) for a sample with coefficients c: a random
+        draw times a factor uniform in [0, fmax], scaled to the sample's input RMS."""
+        k = int(rng.integers(len(self.coeffs)))
+        s_model = sh_rms(sh.lowpass(c[:, : Lin + 1, : Lin + 1].astype(np.float64), Lin))
+        f = rng.uniform(0.0, fmax) * s_model / self.ref[Lin][k]
+        return f * self.coeffs[k][:, : Lin + 1, : Lin + 1].astype(np.float64)
+
+
 def extra_grids(ex: Extras, L: int, Lin: int, rot: Rotation | None, scale: float, *,
                 month: str, name: str = "", prev=None, bank: ModelBank | None = None,
                 rng: np.random.Generator | None = None) -> list[np.ndarray]:
@@ -246,8 +267,11 @@ def splice_coeffs(c_in: np.ndarray, c_tgt: np.ndarray, Lin: int, L: int) -> np.n
 
 def make_sample(c: np.ndarray, month: str, L: int, rot: Rotation | None, *,
                 hold_out_test_box: bool = True, mask_ice: bool = True,
-                flat: float = 0.8, Lin: int | None = None, extra=None) -> Sample:
-    """extra: callable(scale) -> list of grids appended to the input as further channels."""
+                flat: float = 0.8, Lin: int | None = None, extra=None,
+                noise: np.ndarray | None = None) -> Sample:
+    """extra: callable(scale) -> list of grids appended to the input as further channels.
+    noise: coefficients (unrotated, to degree >= Lin) added to the input only: the input
+    becomes lowpass(c + noise, Lin) while the detail to generate stays that of c."""
     Lin = L // 2 if Lin is None else Lin
     if c.shape[-1] - 1 < L:
         raise ValueError(f"coefficients only to degree {c.shape[-1] - 1}, rung needs {L}")
@@ -259,6 +283,10 @@ def make_sample(c: np.ndarray, month: str, L: int, rot: Rotation | None, *,
     s = area_rms(inp, L)
     if s == 0:
         s = 1.0
+    if noise is not None:
+        nn = noise[:, : Lin + 1, : Lin + 1].astype(np.float64)
+        n_grid = sh.synth(sh.lowpass(nn if rot is None else sh.rotate(nn, rot), Lin, flat), L)
+        inp, tgt = inp + n_grid, tgt + n_grid
     wt = grids.area_weights(L) * grids.loss_mask(L, rot, hold_out_test_box, mask_ice)
     q = (rot or Rotation.identity()).as_quat()
     f32 = lambda a: a[None].astype(np.float32)
@@ -299,6 +327,8 @@ class Sampler:
     extras: Extras | None = None    # extra input channels
     bank: ModelBank | None = None   # needed for the 'models' and 'clim' channels
     name: str = ""                  # dataset name (a model is left out of its own 'models' channel)
+    noise_bank: NoiseBank | None = None   # GRACE-like input noise, training samples only
+    noise_max: float = 0.0                # largest noise factor (times the formal errors)
     idx: np.ndarray = field(init=False)
 
     def __post_init__(self):
@@ -343,9 +373,12 @@ class Sampler:
         rng: given in training, so that extra channels are dropped at random (Extras.drop).
         """
         L, Lin = as_step(step)
+        noise = None
+        if rng is not None and self.noise_bank is not None and self.noise_max > 0:
+            noise = self.noise_bank.draw(rng, self.coeffs[i], Lin, self.noise_max)
         return make_sample(self.coeffs[i], self.months[i], L, rot, Lin=Lin,
                            hold_out_test_box=self.hold_out_test_box, mask_ice=self.mask_ice,
-                           extra=self.extra(i, L, Lin, rot, rng))
+                           extra=self.extra(i, L, Lin, rot, rng), noise=noise)
 
     def batch(self, rng: np.random.Generator, batch_size: int, L=None) -> dict:
         step = self.draw_step(rng) if L is None else as_step(L)

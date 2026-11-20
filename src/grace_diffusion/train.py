@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from . import data, prep
+from . import data, prep, sh
 from .model.edm import EDM, EMA, Regressor, count_params
 from .model.unet import UNet
 
@@ -47,8 +47,26 @@ def to_dev(b, dev):
     return detail, cond, b["weight"].to(dev, non_blocking=True)
 
 
+def build_noise_bank(proc, raw, dataset: str, rungs, n: int = 512, seed: int = 0,
+                     last_month: str = "2019-12") -> data.NoiseBank:
+    """n draws of GRACE noise (formal errors, processed like `dataset`) from random months up to
+    last_month, with the RMS of that month's GRACE field at each input degree."""
+    steps = [data.as_step(r) for r in rungs]
+    lmax = max(Lin for _, Lin in steps)
+    months, coeffs = prep.load(Path(proc), dataset)
+    gen = prep.GraceNoise(Path(proc), Path(raw), dataset)
+    ok = [i for i, m in enumerate(months) if m <= last_month and m in gen.sigma]
+    rng = np.random.default_rng([seed, 99])
+    pick = rng.choice(ok, size=n)
+    draws = np.array([gen.draw(months[i], rng)[:, : lmax + 1, : lmax + 1] for i in pick], dtype=np.float32)
+    ref = {Lin: np.array([data.sh_rms(sh.lowpass(coeffs[i][:, : Lin + 1, : Lin + 1].astype(np.float64), Lin))
+                          for i in pick]) for Lin in {Lin for _, Lin in steps}}
+    return data.NoiseBank(draws, ref)
+
+
 def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: str | None = None,
-                  extras: data.Extras | None = None):
+                  extras: data.Extras | None = None, noise_bank: data.NoiseBank | None = None,
+                  noise_max: float = 0.0):
     """Train and validation samplers; `datasets` is one name or a comma-separated list.
 
     target: dataset supplying the detail (paired samples); the datasets then supply the input.
@@ -68,7 +86,7 @@ def make_samplers(proc, datasets: str, kind: str, rungs, rotate: str, target: st
                                               tgt_months=tm, tgt_coeffs=tc))
             else:
                 dst.append(data.Sampler(months, coeffs, kind, split, rungs=rungs, rotate=rot,
-                                        name=name, **ex))
+                                        name=name, noise_bank=noise_bank, noise_max=noise_max, **ex))
     if len(tr) == 1:
         return tr[0], va[0]
     return data.MultiSampler(tr), data.MultiSampler(va)
@@ -127,6 +145,12 @@ def main(argv=None):
     p.add_argument("--rungs", default="8,16", help="steps: '8,16', or '8-32' (input 8, target 32)")
     p.add_argument("--extras", default="",
                    help="extra input channels, e.g. 'hist:1,2,3,6,12+models+clim+land' (data.Extras)")
+    p.add_argument("--input-noise", type=float, default=0.0,
+                   help="train with GRACE-like noise on the input: formal errors times a factor "
+                        "drawn uniformly from [0, this value]; 0 = clean inputs")
+    p.add_argument("--noise-dataset", default="grace_ddk5_land",
+                   help="GRACE dataset whose processing and amplitude the input noise follows")
+    p.add_argument("--raw", default="data/raw")
     p.add_argument("--extras-drop", type=float, default=0.15,
                    help="probability of zeroing each group of extra channels in training")
     p.add_argument("--model", choices=["diffusion", "regress"], default="diffusion")
@@ -157,12 +181,15 @@ def main(argv=None):
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rungs = data.parse_steps(a.rungs)
     extras = data.parse_extras(a.extras, a.extras_drop)
-    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target, extras)
+    bank = build_noise_bank(a.proc, a.raw, a.noise_dataset, rungs) if a.input_noise > 0 else None
+    train_s, val_s = make_samplers(a.proc, a.dataset, a.kind, rungs, a.rotate, a.target, extras,
+                                   bank, a.input_noise)
     cfg = dict(model=a.model, base=a.base, mults=[int(x) for x in a.mults.split(",")],
                blocks=a.blocks, dropout=a.dropout, rungs=a.rungs, dataset=a.dataset,
                target=a.target, kind=a.kind, rotate=a.rotate, noise=a.noise, p_mean=a.p_mean,
                p_std=a.p_std, sigma_max=a.sigma_max, seed=a.seed, steps=a.steps, batch=a.batch,
-               lr=a.lr, init=a.init, extras=a.extras, extras_drop=a.extras_drop, extra_ch=extras.n)
+               lr=a.lr, init=a.init, input_noise=a.input_noise, noise_dataset=a.noise_dataset,
+               extras=a.extras, extras_drop=a.extras_drop, extra_ch=extras.n)
     init = None
     if a.init:
         # fine-tuning: keep the network and its preconditioning scale; the model type must match
