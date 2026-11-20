@@ -199,12 +199,39 @@ the months from 2023 onward have not been examined and are reserved for the fina
 
 \subsection{Hydrological models}
 The training data are monthly TWS fields of ten models of the ISIMIP3a global water sector
-(CWatM, H08, HydroPy, JULES-ES, JULES-W2, LPJmL, MIROC-INTEG-LAND, ORCHIDEE-MICT, WaterGAP2-2e
-and WEB-DHM-SG), all driven by the GSWP3-W5E5 forcing with historical human water use, for
-1901--2019 at $0.5^\circ$, expanded to degree 128. Cells whose storage drifts by more than
-1\,m over the simulation (unbounded snow accumulation on glaciers and point-like urban
-groundwater abstraction) are set to zero anomaly. The years 1901--1989 are used for training,
-1990--2001 for validation, and 2002--2019 are reserved.
+(Table~\ref{tab:models}), all driven by the GSWP3-W5E5 forcing with historical human water
+use, for 1901--2019 (1428 months) at $0.5^\circ$, expanded to degree 128. Cells whose storage
+drifts by more than 1\,m over the simulation (unbounded snow accumulation on glaciers and
+point-like urban groundwater abstraction) are set to zero anomaly. The years 1901--1989 are
+used for training, 1990--2001 for validation, and 2002--2019 are reserved. The models differ
+considerably in amplitude; since each field is normalised by the root mean square of its input,
+this does not by itself give the stronger models more weight in training.
+
+\begin{table}[ht]
+\centering\small
+\caption{The ten hydrological models (ISIMIP3a identifiers). Cells set to zero anomaly, with
+their share of the model's land cells; global root mean square over 1901--1989 of the field
+limited to degree 32 and of the detail between degrees 32 and 128 (mm); and the median over
+land of the gain that fits the model's field to GRACE's at degrees below 8
+(Section~\ref{sec:month}).}
+\label{tab:models}
+\begin{tabular}{lrrrrr}
+  \toprule
+  model & \multicolumn{2}{c}{cells set to zero} & field to degree 32 & detail 32 to 128 & gain \\
+  \midrule
+  CWatM & 2680 & 4.0\% & 65.8 & 62.4 & 0.79 \\
+  H08 & 1429 & 2.1\% & 42.4 & 32.9 & 0.76 \\
+  HydroPy & 148 & 0.2\% & 48.7 & 38.9 & 0.74 \\
+  JULES-ES-VN6P3 & 5603 & 8.3\% & 172.4 & 133.2 & 0.00 \\
+  JULES-W2 & 544 & 0.9\% & 42.0 & 31.7 & 0.98 \\
+  LPJmL5-7-10-fire & 550 & 0.8\% & 32.0 & 27.4 & 1.01 \\
+  MIROC-INTEG-LAND & 2791 & 4.1\% & 71.7 & 58.2 & 1.08 \\
+  ORCHIDEE-MICT & 1144 & 1.6\% & 56.8 & 56.0 & 0.80 \\
+  WaterGAP2-2e & 2597 & 3.9\% & 37.5 & 32.4 & 1.06 \\
+  WEB-DHM-SG & 68 & 0.1\% & 49.3 & 44.7 & 0.92 \\
+  \bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Data used for comparison}
 The GLWS2.0 data set (Gerdener et~al.\ 2023), obtained by assimilating GRACE and GRACE-FO into
