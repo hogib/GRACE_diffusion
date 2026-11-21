@@ -483,6 +483,68 @@ confidence that the network derives from model-based inputs is thus justified on
 and not on GRACE, and the margin that GRACE requires over the models (Section~\ref{sec:calib})
 is about 30\% for this network, against 10--20\% without additional inputs.
 
+\subsection{Uncertainty of the GRACE input}\label{sec:noise}
+The networks are trained on model fields that carry no observation error, whereas the GRACE
+input does. Two ways of accounting for this were examined with the formal errors of the
+monthly solutions, which were drawn as random coefficient sets, passed through the DDK5 filter
+and masked like the data.
+
+In the first, no network is retrained: each ensemble member is generated from a GRACE input
+perturbed with one such draw, and only the generated detail is retained. With formal errors at
+their nominal size and a spread factor fitted on the months from 2002 to 2014 (1.2 and 1.15
+for the network with all inputs, 1.15 and 1.05 for the network without additional inputs), the
+scores for January 2015 to June 2017 are 14.8 and 30.1\,mm with spread-to-error ratios of 0.87
+and 0.85 for the former, and 18.5 and 32.5\,mm with ratios of 1.04 and 0.87 for the latter.
+This is the first setting, fitted on earlier months, that satisfies both criteria of
+Section~\ref{sec:eval} on later ones. Formal errors at twice their nominal size give ratios of
+0.91 to 1.05 without a spread factor, at a small cost in CRPS.
+
+In the second, the perturbation is applied to the training inputs, with a size drawn uniformly
+between zero and twice the formal errors. A network trained in this way with the models'
+seasonal cycle, the land mask and the latitude as additional inputs was compared with an
+otherwise identical network trained on unperturbed inputs, both applied to unperturbed GRACE.
+The ratio of spread to error rises from 0.69 and 0.65 to 0.77 and 0.71 in the first period,
+and from 0.67 and 0.66 to 0.74 and 0.74 in 2020--2022, without reaching the calibrated range,
+and the CRPS does not improve (17.4 and 33.3 against 17.2 and 31.9\,mm; 20.4 and 28.4 against
+19.1 and 29.2\,mm). Confidence intervals for these differences have not yet been computed, and
+the combination of the two approaches has not been tested. On the present evidence the
+perturbation at the time of generation is the more effective of the two.
+
+\subsection{Withheld models}\label{sec:loo}
+Two further networks were trained on nine of the ten models, withholding WaterGAP2-2e and
+JULES-W2 respectively, and scored on held-out years of the withheld model at degrees 8 to 16
+and 16 to 32 (Table~\ref{tab:loo}). The network trained on all ten models, which has seen the
+model concerned in other years, serves as the reference.
+
+\begin{table}[ht]
+\centering\small
+\caption{Withheld models: CRPS (mm) on 36 held-out months of the model named, with the ratio
+of spread to error in parentheses.}
+\label{tab:loo}
+\begin{tabular}{llcc}
+  \toprule
+  model scored & network & degrees 8 to 16 & degrees 16 to 32 \\
+  \midrule
+  WaterGAP2-2e & spectral baseline & 16.2 & 14.2 \\
+               & trained without it & 5.3 (1.06) & 7.1 (1.01) \\
+               & trained with it & 4.9 (1.14) & 6.7 (1.05) \\
+  JULES-W2 & spectral baseline & 18.2 & 15.4 \\
+           & trained without it & 5.8 (0.84) & 8.2 (0.87) \\
+           & trained with it & 5.5 (0.93) & 7.9 (0.89) \\
+  \bottomrule
+\end{tabular}
+\end{table}
+
+Withholding a model from training costs 0.3 to 0.4\,mm, or 4 to 8\%, and leaves the spread
+close to calibrated. Against GRACE the two nine-model networks score 17.2 and 32.0\,mm and
+17.3 and 31.3\,mm, as does the ten-model network (17.2 and 31.9\,mm). Relative to the
+root-mean-square size of the detail to be predicted, the error is 0.17 and about 0.25 for a
+withheld model and 0.31 and 0.42 for GRACE. The relation between the large-scale field and
+the detail is thus shared among these models to a far greater degree than between any of them
+and the observations, as may be expected from simulations that follow one protocol and use
+one meteorological forcing. A test on a withheld member of this set therefore shows that the
+method does not depend on a particular model, and says little about the distance to reality.
+
 \section{Evaluation}\label{sec:eval}
 
 Below degree 32 the product equals GRACE by construction. Above it, no global observation
@@ -500,9 +562,12 @@ method one and two octaves above the scales of interest.
 
 The third level withholds one hydrological model from training and scores the network on it
 at the target scales, for each of several models in turn. It shows whether the relation
-learned from some models holds for another, in accuracy and in spread, and so stands in for
-the test against observations that cannot be made. If the models did not agree on this
-relation at fine scales, the product could not be trusted there.
+learned from some models holds for another, in accuracy and in spread. If the models did not
+agree on this relation at fine scales, the product could not be trusted there. Their
+agreement is necessary and not sufficient: at the scales GRACE resolves, a withheld model of
+the present set is predicted almost as well as one seen in training and far better than GRACE
+(Section~\ref{sec:loo}), so this level gives an optimistic bound. A withheld model of a
+different family and with a different forcing would be the stronger form of the test.
 
 The fourth level compares the product with GLWS2.0 at a common resolution and reports where
 the two agree and where they differ, without a criterion of success.
@@ -528,18 +593,18 @@ to a stated degree.
 
 The second evaluation level is complete for DDK5-filtered and unfiltered GRACE in the basic
 form of the method and, for DDK5-filtered GRACE, with the additional inputs of
-Section~\ref{sec:ext}. A calibration in which each ensemble member is generated from a GRACE
-input perturbed with the formal errors of the monthly solution, so that the spread reflects
-the uncertainty of the input, is being examined as a complement to the spread factor. The
-remaining work is as follows.
+Section~\ref{sec:ext}, including the calibration by perturbed inputs
+(Section~\ref{sec:noise}) and a first test with withheld models (Section~\ref{sec:loo}).
+The remaining work is as follows.
 
 First, the networks for the target scales are trained on the ten models, in one step and in
 two, and evaluated at the first level. Global grids at degree 128 do not fit the memory of the
 available workstation (32\,GB) at a useful batch size, so this requires training on
 sub-regions of the grid, which has yet to be implemented.
 
-Second, the leave-one-model-out test is run at the target scales, and the spread factor of
-Section~\ref{sec:calib} is derived from it.
+Second, the test with withheld models is run at the target scales, if possible with a model
+from outside the present set, and the spread factor of Section~\ref{sec:calib} is derived
+from it.
 
 Third, the product is generated for the GRACE and GRACE-FO record, compared with GLWS2.0, and
 evaluated against independent data over Türkiye.

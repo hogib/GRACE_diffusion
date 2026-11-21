@@ -578,3 +578,51 @@ The last row is the first setting, fitted on earlier months, that meets both cri
 ones. The networks are sensitive to input errors of the size of GRACE's formal errors; they
 were trained on noise-free model fields. Next: training with GRACE-like input noise
 (`train --input-noise`, `data.NoiseBank`, `scripts/noise_train.sh`).
+
+**B.9 Training with GRACE-like input noise** (`scripts/noise_train.sh`, 2026-11-20/21; 60,000
+steps each). Three ten-model networks at the coarse steps with the standard extra inputs
+(models' seasonal cycle, land mask, latitude): clean training inputs ("std-clean"); training
+inputs perturbed with GRACE's formal errors times a factor drawn from 0 to 2 ("std-noise"); the
+same plus the models' fields for the month ("full-noise"). Scored on land-only GRACE DDK5 with
+unperturbed GRACE inputs, stochastic sampler, no spread factor. CRPS in mm, R2 / R3, with
+spread/error in brackets. No bootstrap intervals yet.
+
+| network | 2015-01 to 2017-06 (22 months) | 2020–2022 (36 months) |
+|---|---|---|
+| no extras | 18.5 / 33.2 (0.80 / 0.72) | 22.6 / 29.8 (0.74 / 0.72) |
+| all extras, clean (B.7) | 15.4 / 31.1 (0.59 / 0.62) | 19.6 / 27.3 (0.59 / 0.66) |
+| std-clean | 17.2 / 31.9 (0.69 / 0.65) | 19.1 / 29.2 (0.67 / 0.66) |
+| std-noise | 17.4 / 33.3 (0.77 / 0.71) | 20.4 / 28.4 (0.74 / 0.74) |
+| full-noise | 15.9 / 33.9 (0.69 / 0.64) | 21.3 / 28.5 (0.70 / 0.76) |
+
+Noise in training widens the spread by 0.06–0.08 in spread/error (std-noise against std-clean)
+and does not reach 0.85. It does not improve CRPS: worse at R2 in both periods (+0.2, +1.3),
+mixed at R3 (+1.4, −0.8). With the monthly model fields added (full-noise against "all") it is
+worse in three of four cells. Not yet tested: these networks with perturbed inputs at sampling
+time (B.8), which is the setting they were trained for. As it stands, perturbing inputs at
+sampling time with a small spread factor (B.8) does more for calibration than noise in training.
+
+**B.10 Leave one model out at the coarse steps** (`scripts/loo.sh`, 2026-11-21). Two networks
+trained on nine models each (std-clean settings; the withheld model also removed from the
+seasonal-cycle input), scored on the withheld model's held-out years (first 36 months of
+1990–2001) next to the ten-model network std-clean, which has seen that model in other years.
+CRPS in mm, R2 / R3; spread/error in brackets.
+
+| withheld model | spectral baseline | unseen (nine models) | seen (ten models) |
+|---|---|---|---|
+| WaterGAP2-2e | 16.2 / 14.2 | 5.3 / 7.1 (1.06 / 1.01) | 4.9 / 6.7 (1.14 / 1.05) |
+| JULES-W2 | 18.2 / 15.4 | 5.8 / 8.2 (0.84 / 0.87) | 5.5 / 7.9 (0.93 / 0.89) |
+
+Correlation of the ensemble-mean detail with the truth for the unseen model: 0.95 / 0.88 and
+0.95 / 0.86. Not having seen the model costs 0.3–0.4 mm (4–8%). On GRACE (2015-01 to 2017-06)
+the nine-model networks score 17.2 / 32.0 and 17.3 / 31.3, the same as the ten-model network
+(17.2 / 31.9).
+
+The ladder at these steps is therefore: seen model about 5 / 7 mm, unseen model about 5.5 /
+7.5 mm, GRACE about 17 / 32 mm. Relative to the size of the detail being predicted (RMS 32 / 30
+mm for the models, 56 / 77 mm for GRACE) the error is 0.17 / 0.25 for an unseen model and
+0.31 / 0.42 for GRACE. The models resemble each other far more than any of them resembles
+GRACE (same forcing, same protocol), so leaving one of the ten out is a weak stand-in for the
+test against observations: it shows the method is not tied to one model, and little about the
+gap to reality. Consequence for §7.1: level 3 should be read as an optimistic bound, and a
+withheld model of a different family and forcing (ideas list B5) is the more informative test.
