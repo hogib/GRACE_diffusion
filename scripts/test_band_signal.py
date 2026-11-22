@@ -29,8 +29,16 @@ def wrms(x, w):
     return float(np.sqrt((w * x * x).sum() / w.sum()))
 
 
+SHARP: dict[int, tuple[int, int]] = {}                # L -> (lo, hi): strict degree band
+
+
 def band(c, L, Lin):
     c = c[:, : L + 1, : L + 1]
+    if L in SHARP:                                    # degrees lo..hi only, no taper zone
+        lo, hi = SHARP[L]
+        out = np.zeros_like(c)
+        out[:, lo: hi + 1, :] = c[:, lo: hi + 1, :]
+        return sh.synth(out, L)
     return sh.synth(sh.lowpass(c, L) - sh.lowpass(c, Lin), L)
 
 
@@ -42,9 +50,14 @@ def main():
     p.add_argument("--last", default="2017-06")
     p.add_argument("--stride", type=int, default=2)
     p.add_argument("--draws", type=int, default=4)
+    p.add_argument("--sharp", default="", help="strict degree bands, e.g. '32:17-25,64:33-60'; "
+                   "the default band of a step includes its taper zone (0.8 Lin .. Lin)")
     p.add_argument("--region", default="val_land")
     p.add_argument("--out", required=True)
     a = p.parse_args()
+    for part in filter(None, a.sharp.split(",")):
+        k, v = part.split(":")
+        SHARP[int(k)] = tuple(int(x) for x in v.split("-"))
     proc, raw = Path("data/proc"), Path("data/raw")
     gm, gc = prep.load(proc, a.dataset)
     names = sorted(f.stem for f in proc.glob("isimip_*.npz"))

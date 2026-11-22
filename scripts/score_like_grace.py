@@ -29,9 +29,16 @@ from grace_diffusion import data, evaluate, grids, metrics, prep, sh
 L, LIN, LM = 64, 32, 128
 
 
+BAND = [33, 60]                                       # strict degree band compared
+
+
 def band(c):
+    """Degrees BAND[0]..BAND[1] only. The step's own band (lowpass 64 minus lowpass 32) starts
+    at degree 26 and so contains signal that GRACE resolves well and the input already holds."""
     c = c[:, : L + 1, : L + 1]
-    return sh.synth(sh.lowpass(c, L) - sh.lowpass(c, LIN), L)
+    out = np.zeros_like(c)
+    out[:, BAND[0]: BAND[1] + 1, :] = c[:, BAND[0]: BAND[1] + 1, :]
+    return sh.synth(out, L)
 
 
 def wrms(x, w):
@@ -61,10 +68,12 @@ def main():
     p.add_argument("--steps", type=int, default=32)
     p.add_argument("--chunk", type=int, default=8)
     p.add_argument("--churn", type=float, default=20.0)
+    p.add_argument("--band", default="33-60", help="strict degree band compared")
     p.add_argument("--region", default="val_land")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", required=True)
     a = p.parse_args()
+    BAND[:] = [int(x) for x in a.band.split("-")]
     proc, raw = Path("data/proc"), Path("data/raw")
     months, coeffs = prep.load(proc, a.dataset)
     pos = {m: j for j, m in enumerate(months)}
