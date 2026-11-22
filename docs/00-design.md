@@ -655,32 +655,47 @@ that reached the range. Open: scaling the perturbation to a fixed fraction of th
 instead of the formal errors, which would be an empirical model-error term and should be
 named as such.
 
-**B.12 Is there a gradeable GRACE signal at degrees 33–64?** (`scripts/test_band_signal.py`,
-2026-11-22; no training; ideas list B1a.) Land-only DDK5 GRACE in the band of the step 32 → 64,
-against the ten models' detail in the same band, as it is and after passing the model field
-through DDK5 and the land mask ("filtered"). Every second month of 2002-04 to 2017-06; scoring
-region as elsewhere. Step 16 → 32 as the reference.
+**B.12 Is there a gradeable GRACE signal at degrees 33–60?** (`scripts/test_band_signal.py`,
+`scripts/score_like_grace.py`, 2026-11-22; no training; ideas list B1a.) Corrected the same
+day: the first version compared the band of the step 32 → 64, which starts at degree 26 (taper
+zone), and used the land-only GRACE fields, in which the land mask itself creates content
+above degree 32 at the coasts. Both inflate the agreement; see the two traps below.
 
-| | 16 → 32, 2004–2010 | 32 → 64, 2004–2010 | 32 → 64, 2015–2017 |
-|---|---|---|---|
-| RMS of GRACE's detail (mm) | 36 | 39 | 107 |
-| RMS of model detail, as it is / filtered | 42 / 40 | 44 / 32 | 54 / 39 |
-| correlation GRACE–single model, filtered | 0.54 | 0.35 | 0.20 |
-| correlation GRACE–mean of the models, filtered | 0.65 | 0.45 | 0.28 |
-| correlation between two filtered models | 0.44 | 0.37 | 0.37 |
+The comparison that holds: DDK5 GRACE without land mask, strict degrees 33–60, scored over land
+outside the test box; candidates passed through DDK5 (no mask) first. Every fourth month of
+2004–2010 (21 months). Correlation of the candidate (ensemble mean) with GRACE in the band:
 
-In 2004–2010 GRACE's filtered band at degrees 33–64 agrees with the mean of the filtered
-models at 0.45, more than two models agree with each other (0.37) and about two thirds of the
-agreement one band coarser (0.65). There is a real signal to grade against. Filtering the
-models like GRACE raises the agreement (0.39 → 0.45), so the comparison has to be made after
-filtering. In 2015–2017 the band is dominated by noise (RMS 107 mm) and is of little use.
+| candidate | as it is | after DDK5 |
+|---|---|---|
+| input only (nothing above degree 32) | 0.02 | 0.11 |
+| spectral baseline | 0.00 | 0.05 |
+| ten models' fields for the month (mean) | 0.32 | 0.37 |
+
+GRACE's filtered field at degrees 33–60 agrees with the models' fields for the month at 0.37,
+against 0.05–0.11 for candidates that carry no information there. There is a real signal to
+grade against in 2004–2010. Filtering the candidate like GRACE raises the agreement, so the
+comparison has to be made after filtering. By sub-band (land-only fields, strict bands,
+filtered model mean): 0.47 at degrees 33–45, 0.35 at 46–60, 0.53 at 26–32. RMS of GRACE's band
+33–60: about 46 mm; of the filtered models: 27 mm. In 2015–2017 the band is dominated by noise
+(RMS over 100 mm in the first version) and is of little use.
+
+Two traps, both found by scoring the input-only candidate:
+- The band of a step (lowpass L minus lowpass Lin) contains degrees 0.8 Lin to Lin. For
+  32 → 64 that is degrees 26–32, which GRACE resolves and the input partly holds.
+- Masking to land moves low-degree signal into high degrees at the coasts. An input-only
+  candidate, filtered and masked like the land-only data, correlates 0.42 with the land-only
+  GRACE band at 33–60 although it holds nothing there. The coarse-step results (B.3–B.11) are
+  not affected in the same way, since there input and truth come from the same masked field
+  and the detail is scored as a whole, but the share of coast effects in those scores has not
+  been measured.
 
 The noise level is not known well enough: independent draws from the formal errors, filtered
-like the data, give more variance in this band than GRACE itself contains in several periods
-(share 0.8 in 2004–2010, above 1 elsewhere), which is impossible and contradicts the
-correlation found. Draws that ignore the correlations between coefficients are not a valid
-noise model at these degrees (at 16 → 32 in 2004–2010 the share is a plausible 0.14). The
-check can therefore rank methods by correlation and by error after filtering, on 2004–2010 and
-similar years, but cannot yet say how far a method is from the best possible.
+like the data, give about as much variance in this band as GRACE itself contains (share 0.9 to
+1.7 by sub-band in 2004–2010), which contradicts the correlations found. Draws that ignore
+the correlations between coefficients are not a valid noise model at these degrees. The check
+can rank methods by correlation and error after filtering; it cannot yet say how far a method
+is from the best possible.
 
-Next: a network for 32 → 64 trained on the ten models, and scoring after DDK5 and mask.
+Next: the network for 32 → 64 trained on the ten models (`scripts/r4.sh`, launched 2026-11-22
+19:31, batch 8, peak 29 GB), scored with `score_like_grace.py --truth grace_ddk5 --no-mask`.
+Bars: 0.05–0.11 (no information) and 0.37 (the models' own fields for the month).
