@@ -69,6 +69,10 @@ def main():
     p.add_argument("--chunk", type=int, default=8)
     p.add_argument("--churn", type=float, default=20.0)
     p.add_argument("--band", default="33-60", help="strict degree band compared")
+    p.add_argument("--truth", default="", help="dataset whose band is the truth (default: the "
+                   "input dataset). With 'grace_ddk5' and --no-mask the comparison avoids the "
+                   "fine-scale content that the land mask itself creates at the coasts")
+    p.add_argument("--no-mask", action="store_true", help="filter only, no land mask")
     p.add_argument("--region", default="val_land")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", required=True)
@@ -77,6 +81,8 @@ def main():
     proc, raw = Path("data/proc"), Path("data/raw")
     months, coeffs = prep.load(proc, a.dataset)
     pos = {m: j for j, m in enumerate(months)}
+    tm, tc = prep.load(proc, a.truth) if a.truth else (months, coeffs)
+    tpos = {m: j for j, m in enumerate(tm)}
     idx = [i for i, m in enumerate(months) if a.first <= m <= a.last][:: a.stride]
 
     ddk = sh.DDKFilter.named("DDK5", raw / "ddk")
@@ -86,7 +92,8 @@ def main():
 
     def like_grace(c):                                # coefficients -> DDK5 -> land mask
         f = ddk(c)[:, : L + 1, : L + 1]
-        f = sh.analyse(sh.synth(f, LM) * mask, lmax=L)
+        if not a.no_mask:
+            f = sh.analyse(sh.synth(f, LM) * mask, lmax=L)
         f[:, :2, :] = 0.0
         return f
 
@@ -119,7 +126,7 @@ def main():
     for i in idx:
         month = months[i]
         g = coeffs[i].astype(np.float64)
-        truth = band(g)
+        truth = band(tc[tpos[month]].astype(np.float64))
         cc = g[:, : L + 1, : L + 1]
         for name, method in methods.items():
             rng = np.random.default_rng([a.seed, L, int(i)])
