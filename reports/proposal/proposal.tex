@@ -506,9 +506,22 @@ otherwise identical network trained on unperturbed inputs, both applied to unper
 The ratio of spread to error rises from 0.69 and 0.65 to 0.77 and 0.71 in the first period,
 and from 0.67 and 0.66 to 0.74 and 0.74 in 2020--2022, without reaching the calibrated range,
 and the CRPS does not improve (17.4 and 33.3 against 17.2 and 31.9\,mm; 20.4 and 28.4 against
-19.1 and 29.2\,mm). Confidence intervals for these differences have not yet been computed, and
-the combination of the two approaches has not been tested. On the present evidence the
-perturbation at the time of generation is the more effective of the two.
+19.1 and 29.2\,mm). When the inputs are also perturbed at the time of generation, the network
+trained on unperturbed inputs is as accurate as the one trained on perturbed inputs or more
+so, and its spread is as wide. Confidence intervals for these differences have not yet been
+computed. Perturbation of the training inputs is therefore not pursued.
+
+The perturbation at the time of generation was then applied to the second period. For
+2020--2022 it leaves the scores unchanged and raises the ratio of spread to error by 0.01 to
+0.07 only, for every network and at once or twice the formal errors. The formal errors
+explain the difference: drawn, filtered and masked as described, their root-mean-square size
+in the input band is 5.7 and 10.6\,mm between January 2015 and June 2017, the last and
+degraded years of the GRACE mission, against 1.1 and 2.3\,mm in 2020--2022 for GRACE-FO.
+Without perturbation the ensembles are equally narrow in both periods. The measurement error
+of the input is therefore not the principal cause of the deficit in spread, which lies in the
+disagreement between the models and GRACE, and the calibration by perturbed inputs succeeds
+only where the formal errors are unusually large. For 2020--2022 the spread factor fitted on
+GRACE (Section~\ref{sec:g1}) remains the only calibration that reached the calibrated range.
 
 \subsection{Withheld models}\label{sec:loo}
 Two further networks were trained on nine of the ten models, withholding WaterGAP2-2e and

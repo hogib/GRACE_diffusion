@@ -626,3 +626,31 @@ GRACE (same forcing, same protocol), so leaving one of the ten out is a weak sta
 test against observations: it shows the method is not tied to one model, and little about the
 gap to reality. Consequence for §7.1: level 3 should be read as an optimistic bound, and a
 withheld model of a different family and forcing (ideas list B5) is the more informative test.
+
+**B.11 Noise-trained networks with perturbed inputs; the perturbation in a second period**
+(`scripts/noise_train_eval.sh`, 2026-11-22; no training). The networks of B.9 and B.7 with
+each member's GRACE input perturbed by the formal errors times 1 or 2, no spread factor. CRPS
+in mm, R2 / R3, spread/error in brackets.
+
+| network | 2015–2017-06, factor 1 | factor 2 | 2020–2022, factor 1 | factor 2 |
+|---|---|---|---|---|
+| no extras | (B.8) 18.5 / 32.6 (0.91 / 0.83) | 19.3 / 33.3 (1.05 / 1.00) | 22.5 / 29.6 (0.75 / 0.74) | 22.3 / 29.4 (0.78 / 0.79) |
+| all extras | (B.8) 15.0 / 30.5 (0.72 / 0.74) | 15.7 / 31.3 (0.91 / 0.93) | 19.5 / 27.3 (0.60 / 0.68) | 19.4 / 27.2 (0.62 / 0.73) |
+| std-clean | 17.2 / 31.6 (0.81 / 0.79) | 18.5 / 33.3 (0.98 / 1.00) | 19.1 / 29.2 (0.68 / 0.68) | 19.0 / 29.1 (0.70 / 0.73) |
+| std-noise | 17.6 / 33.4 (0.83 / 0.77) | 18.2 / 33.7 (0.93 / 0.86) | 20.4 / 28.4 (0.75 / 0.75) | 20.4 / 28.4 (0.76 / 0.79) |
+| full-noise | 16.0 / 34.1 (0.75 / 0.68) | 16.3 / 34.6 (0.86 / 0.74) | 21.3 / 28.5 (0.71 / 0.78) | 21.2 / 28.5 (0.72 / 0.81) |
+
+Two findings. First, noise in training brings nothing in the setting it was meant for: with
+perturbed inputs the clean-trained network is as accurate or better and as wide. Noise
+training is dropped. Second, and more important: in 2020–2022 the perturbation hardly changes
+anything (spread/error +0.01 to +0.07, CRPS unchanged), for every network. The reason is the
+size of the formal errors. Drawn, filtered and masked as in the method, their RMS in the input
+band is 5.7 / 10.6 mm in 2015-01 to 2017-06 (the degraded last years of GRACE), against 1.1 /
+2.3 mm in 2020–2022 (GRACE-FO) and 1.2 / 2.4 mm in 2005–2007. The ensembles are equally narrow
+in both periods without perturbation (0.65–0.80), so the measurement error of the input is
+not the main cause of the narrow spread; the mismatch between models and GRACE is. The pass in
+B.8 holds for a period with unusually large formal errors and does not carry over to
+GRACE-FO. For 2020–2022 the spread factor fitted on GRACE (B.4) remains the only calibration
+that reached the range. Open: scaling the perturbation to a fixed fraction of the input
+instead of the formal errors, which would be an empirical model-error term and should be
+named as such.
