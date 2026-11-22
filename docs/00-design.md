@@ -654,3 +654,33 @@ GRACE-FO. For 2020–2022 the spread factor fitted on GRACE (B.4) remains the on
 that reached the range. Open: scaling the perturbation to a fixed fraction of the input
 instead of the formal errors, which would be an empirical model-error term and should be
 named as such.
+
+**B.12 Is there a gradeable GRACE signal at degrees 33–64?** (`scripts/test_band_signal.py`,
+2026-11-22; no training; ideas list B1a.) Land-only DDK5 GRACE in the band of the step 32 → 64,
+against the ten models' detail in the same band, as it is and after passing the model field
+through DDK5 and the land mask ("filtered"). Every second month of 2002-04 to 2017-06; scoring
+region as elsewhere. Step 16 → 32 as the reference.
+
+| | 16 → 32, 2004–2010 | 32 → 64, 2004–2010 | 32 → 64, 2015–2017 |
+|---|---|---|---|
+| RMS of GRACE's detail (mm) | 36 | 39 | 107 |
+| RMS of model detail, as it is / filtered | 42 / 40 | 44 / 32 | 54 / 39 |
+| correlation GRACE–single model, filtered | 0.54 | 0.35 | 0.20 |
+| correlation GRACE–mean of the models, filtered | 0.65 | 0.45 | 0.28 |
+| correlation between two filtered models | 0.44 | 0.37 | 0.37 |
+
+In 2004–2010 GRACE's filtered band at degrees 33–64 agrees with the mean of the filtered
+models at 0.45, more than two models agree with each other (0.37) and about two thirds of the
+agreement one band coarser (0.65). There is a real signal to grade against. Filtering the
+models like GRACE raises the agreement (0.39 → 0.45), so the comparison has to be made after
+filtering. In 2015–2017 the band is dominated by noise (RMS 107 mm) and is of little use.
+
+The noise level is not known well enough: independent draws from the formal errors, filtered
+like the data, give more variance in this band than GRACE itself contains in several periods
+(share 0.8 in 2004–2010, above 1 elsewhere), which is impossible and contradicts the
+correlation found. Draws that ignore the correlations between coefficients are not a valid
+noise model at these degrees (at 16 → 32 in 2004–2010 the share is a plausible 0.14). The
+check can therefore rank methods by correlation and by error after filtering, on 2004–2010 and
+similar years, but cannot yet say how far a method is from the best possible.
+
+Next: a network for 32 → 64 trained on the ten models, and scoring after DDK5 and mask.
